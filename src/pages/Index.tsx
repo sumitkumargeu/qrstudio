@@ -1,16 +1,19 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { toast } from 'sonner';
-import { Helmet } from 'react-helmet';
 
 // Components
 import { Header } from '@/components/Header';
+import { ThemeToggle } from '@/components/ThemeToggle';
 import { ModeSelector } from '@/components/ModeSelector';
 import { DesignSelector } from '@/components/DesignSelector';
 import { LogoManager } from '@/components/LogoManager';
 import { QRPreview } from '@/components/QRPreview';
 import { QRScanner } from '@/components/QRScanner';
 import { QRHistory } from '@/components/QRHistory';
+import { ColorPresets, COLOR_PRESETS, GRADIENT_PRESETS, type ColorPreset } from '@/components/ColorPresets';
+import { BatchGenerator } from '@/components/BatchGenerator';
+import { PrintDialog } from '@/components/PrintDialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
@@ -36,12 +39,13 @@ import {
   Copy,
   Share2,
   RotateCcw,
-  Check,
   Sparkles,
   Frame,
   Settings2,
   ScanLine,
   History,
+  Layers,
+  Printer,
 } from 'lucide-react';
 
 // Types & Utils
@@ -69,7 +73,6 @@ import {
   downloadCanvas,
   copyCanvasToClipboard,
   shareCanvas,
-  isValidUrl,
 } from '@/lib/qr-utils';
 
 const Index = () => {
@@ -105,6 +108,9 @@ const Index = () => {
   const [customColors, setCustomColors] = useState(false);
   const [fgColor, setFgColor] = useState('#000000');
   const [bgColor, setBgColor] = useState('#ffffff');
+  const [selectedPreset, setSelectedPreset] = useState<string | null>(null);
+  const [isGradient, setIsGradient] = useState(false);
+  const [gradientColors, setGradientColors] = useState<string[]>([]);
 
   // Logo
   const [enableLogo, setEnableLogo] = useState(false);
@@ -125,6 +131,7 @@ const Index = () => {
   // History
   const [history, setHistory] = useState<QRHistoryItem[]>([]);
   const [previewContent, setPreviewContent] = useState('');
+  const [qrDataUrl, setQrDataUrl] = useState<string | null>(null);
 
   // Canvas Ref
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -144,6 +151,16 @@ const Index = () => {
       localStorage.setItem('qrHistory', JSON.stringify(history.slice(0, 20)));
     } catch {}
   }, [history]);
+
+  // Handle color preset selection
+  const handlePresetSelect = (preset: ColorPreset) => {
+    setSelectedPreset(preset.id);
+    setFgColor(preset.fg);
+    setBgColor(preset.bg);
+    setIsGradient(!!preset.isGradient);
+    setGradientColors(preset.gradientColors || []);
+    setCustomColors(true);
+  };
 
   // Get form data based on mode
   const getFormData = useCallback(() => {
@@ -248,6 +265,7 @@ const Index = () => {
 
       // Store generated canvas
       generatedCanvasRef.current = canvas;
+      setQrDataUrl(canvas.toDataURL('image/png'));
 
       // Display on visible canvas
       const displayCanvas = canvasRef.current;
@@ -384,7 +402,6 @@ const Index = () => {
       setUrlValue(content.replace(/^https?:\/\//, ''));
     } else if (content.startsWith('WIFI:')) {
       setMode('wifi');
-      // Parse WiFi string
       const ssidMatch = content.match(/S:([^;]*)/);
       const passMatch = content.match(/P:([^;]*)/);
       if (ssidMatch) setWifiSSID(ssidMatch[1]);
@@ -424,638 +441,663 @@ const Index = () => {
     setCustomColors(false);
     setFgColor('#000000');
     setBgColor('#ffffff');
+    setSelectedPreset(null);
+    setIsGradient(false);
+    setGradientColors([]);
     setEnableLogo(false);
     setSelectedLogo(null);
     setEnableBorder(false);
     setHasQR(false);
     setPreviewContent('');
+    setQrDataUrl(null);
     setVerificationStatus('idle');
     toast.success('Reset complete');
   };
 
   return (
-    <>
-      <Helmet>
-        <title>Smart QR Generator - Create Beautiful QR Codes</title>
-        <meta name="description" content="Create stunning, customizable QR codes with logos, borders, and multiple design styles. Free QR code generator with URL, WhatsApp, WiFi, vCard, and more." />
-        <meta name="keywords" content="QR code generator, QR code maker, custom QR code, QR code with logo, WhatsApp QR, WiFi QR code" />
-        
-        {/* Open Graph */}
-        <meta property="og:title" content="Smart QR Generator - Create Beautiful QR Codes" />
-        <meta property="og:description" content="Create stunning, customizable QR codes with logos, borders, and multiple design styles." />
-        <meta property="og:type" content="website" />
-        <meta property="og:image" content="/og-image.png" />
-        
-        {/* Twitter Card */}
-        <meta name="twitter:card" content="summary_large_image" />
-        <meta name="twitter:title" content="Smart QR Generator - Create Beautiful QR Codes" />
-        <meta name="twitter:description" content="Create stunning, customizable QR codes with logos, borders, and multiple design styles." />
-        <meta name="twitter:image" content="/og-image.png" />
-        
-        <link rel="canonical" href="/" />
-      </Helmet>
+    <div className="min-h-screen bg-background pattern-dots">
+      <ThemeToggle />
+      
+      <div className="container max-w-7xl mx-auto px-4 py-6 md:py-10">
+        <Header />
 
-      <div className="min-h-screen bg-background pattern-dots">
-        <div className="container max-w-7xl mx-auto px-4 py-6 md:py-10">
-          <Header />
+        <Tabs value={activeTab} onValueChange={setActiveTab} className="mt-8">
+          <TabsList className="grid w-full max-w-lg mx-auto grid-cols-4 mb-8">
+            <TabsTrigger value="generate" className="gap-2">
+              <Sparkles className="h-4 w-4" />
+              <span className="hidden sm:inline">Generate</span>
+            </TabsTrigger>
+            <TabsTrigger value="batch" className="gap-2">
+              <Layers className="h-4 w-4" />
+              <span className="hidden sm:inline">Batch</span>
+            </TabsTrigger>
+            <TabsTrigger value="scan" className="gap-2">
+              <ScanLine className="h-4 w-4" />
+              <span className="hidden sm:inline">Scan</span>
+            </TabsTrigger>
+            <TabsTrigger value="history" className="gap-2">
+              <History className="h-4 w-4" />
+              <span className="hidden sm:inline">History</span>
+            </TabsTrigger>
+          </TabsList>
 
-          <Tabs value={activeTab} onValueChange={setActiveTab} className="mt-8">
-            <TabsList className="grid w-full max-w-md mx-auto grid-cols-3 mb-8">
-              <TabsTrigger value="generate" className="gap-2">
-                <Sparkles className="h-4 w-4" />
-                <span className="hidden sm:inline">Generate</span>
-              </TabsTrigger>
-              <TabsTrigger value="scan" className="gap-2">
-                <ScanLine className="h-4 w-4" />
-                <span className="hidden sm:inline">Scan</span>
-              </TabsTrigger>
-              <TabsTrigger value="history" className="gap-2">
-                <History className="h-4 w-4" />
-                <span className="hidden sm:inline">History</span>
-              </TabsTrigger>
-            </TabsList>
+          {/* Generate Tab */}
+          <TabsContent value="generate">
+            <div className="grid lg:grid-cols-[1fr_400px] gap-6">
+              {/* Left Column - Controls */}
+              <div className="space-y-6">
+                {/* Mode Selector */}
+                <Card className="glass-card">
+                  <CardHeader className="pb-4">
+                    <CardTitle className="flex items-center gap-2 text-lg">
+                      <Settings2 className="h-5 w-5 text-primary" />
+                      QR Code Type
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <ModeSelector value={mode} onChange={setMode} />
+                  </CardContent>
+                </Card>
 
-            {/* Generate Tab */}
-            <TabsContent value="generate">
-              <div className="grid lg:grid-cols-[1fr_400px] gap-6">
-                {/* Left Column - Controls */}
-                <div className="space-y-6">
-                  {/* Mode Selector */}
-                  <Card className="glass-card">
-                    <CardHeader className="pb-4">
-                      <CardTitle className="flex items-center gap-2 text-lg">
-                        <Settings2 className="h-5 w-5 text-primary" />
-                        QR Code Type
-                      </CardTitle>
-                    </CardHeader>
-                    <CardContent>
-                      <ModeSelector value={mode} onChange={setMode} />
-                    </CardContent>
-                  </Card>
+                {/* Content Input */}
+                <Card className="glass-card">
+                  <CardHeader className="pb-4">
+                    <CardTitle className="text-lg">Content</CardTitle>
+                  </CardHeader>
+                  <CardContent className="space-y-4">
+                    <AnimatePresence mode="wait">
+                      {mode === 'url' && (
+                        <motion.div
+                          key="url"
+                          initial={{ opacity: 0, y: 10 }}
+                          animate={{ opacity: 1, y: 0 }}
+                          exit={{ opacity: 0, y: -10 }}
+                          className="space-y-2"
+                        >
+                          <Label>Website URL</Label>
+                          <Input
+                            placeholder="example.com or https://example.com"
+                            value={urlValue}
+                            onChange={(e) => setUrlValue(e.target.value)}
+                            className="text-base"
+                          />
+                          <p className="text-xs text-muted-foreground">
+                            Enter URL with or without http://
+                          </p>
+                        </motion.div>
+                      )}
 
-                  {/* Content Input */}
-                  <Card className="glass-card">
-                    <CardHeader className="pb-4">
-                      <CardTitle className="text-lg">Content</CardTitle>
-                    </CardHeader>
-                    <CardContent className="space-y-4">
-                      <AnimatePresence mode="wait">
-                        {mode === 'url' && (
-                          <motion.div
-                            key="url"
-                            initial={{ opacity: 0, y: 10 }}
-                            animate={{ opacity: 1, y: 0 }}
-                            exit={{ opacity: 0, y: -10 }}
-                            className="space-y-2"
-                          >
-                            <Label>Website URL</Label>
-                            <Input
-                              placeholder="example.com or https://example.com"
-                              value={urlValue}
-                              onChange={(e) => setUrlValue(e.target.value)}
-                              className="text-base"
-                            />
-                            <p className="text-xs text-muted-foreground">
-                              Enter URL with or without http://
-                            </p>
-                          </motion.div>
-                        )}
-
-                        {mode === 'whatsapp' && (
-                          <motion.div
-                            key="whatsapp"
-                            initial={{ opacity: 0, y: 10 }}
-                            animate={{ opacity: 1, y: 0 }}
-                            exit={{ opacity: 0, y: -10 }}
-                            className="space-y-4"
-                          >
-                            <div className="space-y-2">
-                              <Label>Phone Number</Label>
-                              <div className="flex gap-2">
-                                <Select value={countryCode} onValueChange={setCountryCode}>
-                                  <SelectTrigger className="w-32">
-                                    <SelectValue />
-                                  </SelectTrigger>
-                                  <SelectContent className="max-h-60">
-                                    {COUNTRY_CODES.map((cc) => (
-                                      <SelectItem key={cc.code} value={cc.dial}>
-                                        +{cc.dial} {cc.name}
-                                      </SelectItem>
-                                    ))}
-                                  </SelectContent>
-                                </Select>
-                                <Input
-                                  placeholder="Phone number"
-                                  value={phoneValue}
-                                  onChange={(e) => setPhoneValue(e.target.value)}
-                                  className="flex-1"
-                                />
-                              </div>
-                            </div>
-                            <div className="space-y-2">
-                              <Label>Pre-filled Message</Label>
-                              <Textarea
-                                placeholder="Hello! I'd like to get in touch..."
-                                value={messageValue}
-                                onChange={(e) => setMessageValue(e.target.value)}
-                                rows={3}
-                              />
-                            </div>
-                          </motion.div>
-                        )}
-
-                        {mode === 'text' && (
-                          <motion.div
-                            key="text"
-                            initial={{ opacity: 0, y: 10 }}
-                            animate={{ opacity: 1, y: 0 }}
-                            exit={{ opacity: 0, y: -10 }}
-                            className="space-y-2"
-                          >
-                            <Label>Text Content</Label>
-                            <Textarea
-                              placeholder="Enter any text to encode..."
-                              value={textValue}
-                              onChange={(e) => setTextValue(e.target.value)}
-                              rows={4}
-                            />
-                          </motion.div>
-                        )}
-
-                        {mode === 'wifi' && (
-                          <motion.div
-                            key="wifi"
-                            initial={{ opacity: 0, y: 10 }}
-                            animate={{ opacity: 1, y: 0 }}
-                            exit={{ opacity: 0, y: -10 }}
-                            className="space-y-4"
-                          >
-                            <div className="space-y-2">
-                              <Label>Network Name (SSID)</Label>
-                              <Input
-                                placeholder="My WiFi Network"
-                                value={wifiSSID}
-                                onChange={(e) => setWifiSSID(e.target.value)}
-                              />
-                            </div>
-                            <div className="space-y-2">
-                              <Label>Password</Label>
-                              <Input
-                                type="password"
-                                placeholder="WiFi password"
-                                value={wifiPassword}
-                                onChange={(e) => setWifiPassword(e.target.value)}
-                              />
-                            </div>
-                            <div className="flex items-center justify-between">
-                              <Label>Security Type</Label>
-                              <Select value={wifiAuth} onValueChange={(v) => setWifiAuth(v as typeof wifiAuth)}>
+                      {mode === 'whatsapp' && (
+                        <motion.div
+                          key="whatsapp"
+                          initial={{ opacity: 0, y: 10 }}
+                          animate={{ opacity: 1, y: 0 }}
+                          exit={{ opacity: 0, y: -10 }}
+                          className="space-y-4"
+                        >
+                          <div className="space-y-2">
+                            <Label>Phone Number</Label>
+                            <div className="flex gap-2">
+                              <Select value={countryCode} onValueChange={setCountryCode}>
                                 <SelectTrigger className="w-32">
                                   <SelectValue />
                                 </SelectTrigger>
-                                <SelectContent>
-                                  <SelectItem value="WPA">WPA/WPA2</SelectItem>
-                                  <SelectItem value="WEP">WEP</SelectItem>
-                                  <SelectItem value="nopass">None</SelectItem>
+                                <SelectContent className="max-h-60">
+                                  {COUNTRY_CODES.map((cc) => (
+                                    <SelectItem key={cc.code} value={cc.dial}>
+                                      +{cc.dial} {cc.name}
+                                    </SelectItem>
+                                  ))}
                                 </SelectContent>
                               </Select>
+                              <Input
+                                placeholder="Phone number"
+                                value={phoneValue}
+                                onChange={(e) => setPhoneValue(e.target.value)}
+                                className="flex-1"
+                              />
                             </div>
-                            <div className="flex items-center justify-between">
-                              <Label>Hidden Network</Label>
-                              <Switch checked={wifiHidden} onCheckedChange={setWifiHidden} />
-                            </div>
-                          </motion.div>
-                        )}
+                          </div>
+                          <div className="space-y-2">
+                            <Label>Pre-filled Message</Label>
+                            <Textarea
+                              placeholder="Hello! I'd like to get in touch..."
+                              value={messageValue}
+                              onChange={(e) => setMessageValue(e.target.value)}
+                              rows={3}
+                            />
+                          </div>
+                        </motion.div>
+                      )}
 
-                        {mode === 'vcard' && (
-                          <motion.div
-                            key="vcard"
-                            initial={{ opacity: 0, y: 10 }}
-                            animate={{ opacity: 1, y: 0 }}
-                            exit={{ opacity: 0, y: -10 }}
-                            className="space-y-4"
-                          >
-                            <div className="grid grid-cols-2 gap-3">
-                              <div className="space-y-2">
-                                <Label>First Name</Label>
-                                <Input
-                                  placeholder="John"
-                                  value={vcardFirstName}
-                                  onChange={(e) => setVcardFirstName(e.target.value)}
-                                />
-                              </div>
-                              <div className="space-y-2">
-                                <Label>Last Name</Label>
-                                <Input
-                                  placeholder="Doe"
-                                  value={vcardLastName}
-                                  onChange={(e) => setVcardLastName(e.target.value)}
-                                />
-                              </div>
-                            </div>
-                            <div className="space-y-2">
-                              <Label>Phone</Label>
-                              <Input
-                                placeholder="+1 234 567 8900"
-                                value={vcardPhone}
-                                onChange={(e) => setVcardPhone(e.target.value)}
-                              />
-                            </div>
-                            <div className="space-y-2">
-                              <Label>Email</Label>
-                              <Input
-                                type="email"
-                                placeholder="john@example.com"
-                                value={vcardEmail}
-                                onChange={(e) => setVcardEmail(e.target.value)}
-                              />
-                            </div>
-                            <div className="grid grid-cols-2 gap-3">
-                              <div className="space-y-2">
-                                <Label>Company</Label>
-                                <Input
-                                  placeholder="Acme Inc"
-                                  value={vcardCompany}
-                                  onChange={(e) => setVcardCompany(e.target.value)}
-                                />
-                              </div>
-                              <div className="space-y-2">
-                                <Label>Title</Label>
-                                <Input
-                                  placeholder="CEO"
-                                  value={vcardTitle}
-                                  onChange={(e) => setVcardTitle(e.target.value)}
-                                />
-                              </div>
-                            </div>
-                            <div className="space-y-2">
-                              <Label>Website</Label>
-                              <Input
-                                placeholder="https://example.com"
-                                value={vcardWebsite}
-                                onChange={(e) => setVcardWebsite(e.target.value)}
-                              />
-                            </div>
-                          </motion.div>
-                        )}
+                      {mode === 'text' && (
+                        <motion.div
+                          key="text"
+                          initial={{ opacity: 0, y: 10 }}
+                          animate={{ opacity: 1, y: 0 }}
+                          exit={{ opacity: 0, y: -10 }}
+                          className="space-y-2"
+                        >
+                          <Label>Text Content</Label>
+                          <Textarea
+                            placeholder="Enter any text to encode..."
+                            value={textValue}
+                            onChange={(e) => setTextValue(e.target.value)}
+                            rows={4}
+                          />
+                        </motion.div>
+                      )}
 
-                        {mode === 'email' && (
-                          <motion.div
-                            key="email"
-                            initial={{ opacity: 0, y: 10 }}
-                            animate={{ opacity: 1, y: 0 }}
-                            exit={{ opacity: 0, y: -10 }}
-                            className="space-y-4"
-                          >
-                            <div className="space-y-2">
-                              <Label>Email Address</Label>
-                              <Input
-                                type="email"
-                                placeholder="hello@example.com"
-                                value={emailValue}
-                                onChange={(e) => setEmailValue(e.target.value)}
-                              />
-                            </div>
-                            <div className="space-y-2">
-                              <Label>Subject (optional)</Label>
-                              <Input
-                                placeholder="Subject line..."
-                                value={emailSubject}
-                                onChange={(e) => setEmailSubject(e.target.value)}
-                              />
-                            </div>
-                            <div className="space-y-2">
-                              <Label>Body (optional)</Label>
-                              <Textarea
-                                placeholder="Email body..."
-                                value={emailBody}
-                                onChange={(e) => setEmailBody(e.target.value)}
-                                rows={3}
-                              />
-                            </div>
-                          </motion.div>
-                        )}
-                      </AnimatePresence>
-                    </CardContent>
-                  </Card>
+                      {mode === 'wifi' && (
+                        <motion.div
+                          key="wifi"
+                          initial={{ opacity: 0, y: 10 }}
+                          animate={{ opacity: 1, y: 0 }}
+                          exit={{ opacity: 0, y: -10 }}
+                          className="space-y-4"
+                        >
+                          <div className="space-y-2">
+                            <Label>Network Name (SSID)</Label>
+                            <Input
+                              placeholder="My WiFi Network"
+                              value={wifiSSID}
+                              onChange={(e) => setWifiSSID(e.target.value)}
+                            />
+                          </div>
+                          <div className="space-y-2">
+                            <Label>Password</Label>
+                            <Input
+                              type="password"
+                              placeholder="WiFi password"
+                              value={wifiPassword}
+                              onChange={(e) => setWifiPassword(e.target.value)}
+                            />
+                          </div>
+                          <div className="flex items-center justify-between">
+                            <Label>Security Type</Label>
+                            <Select value={wifiAuth} onValueChange={(v) => setWifiAuth(v as typeof wifiAuth)}>
+                              <SelectTrigger className="w-32">
+                                <SelectValue />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="WPA">WPA/WPA2</SelectItem>
+                                <SelectItem value="WEP">WEP</SelectItem>
+                                <SelectItem value="nopass">None</SelectItem>
+                              </SelectContent>
+                            </Select>
+                          </div>
+                          <div className="flex items-center justify-between">
+                            <Label>Hidden Network</Label>
+                            <Switch checked={wifiHidden} onCheckedChange={setWifiHidden} />
+                          </div>
+                        </motion.div>
+                      )}
 
-                  {/* Design Style */}
-                  <Card className="glass-card">
-                    <CardHeader className="pb-4">
+                      {mode === 'vcard' && (
+                        <motion.div
+                          key="vcard"
+                          initial={{ opacity: 0, y: 10 }}
+                          animate={{ opacity: 1, y: 0 }}
+                          exit={{ opacity: 0, y: -10 }}
+                          className="space-y-4"
+                        >
+                          <div className="grid grid-cols-2 gap-3">
+                            <div className="space-y-2">
+                              <Label>First Name</Label>
+                              <Input
+                                placeholder="John"
+                                value={vcardFirstName}
+                                onChange={(e) => setVcardFirstName(e.target.value)}
+                              />
+                            </div>
+                            <div className="space-y-2">
+                              <Label>Last Name</Label>
+                              <Input
+                                placeholder="Doe"
+                                value={vcardLastName}
+                                onChange={(e) => setVcardLastName(e.target.value)}
+                              />
+                            </div>
+                          </div>
+                          <div className="space-y-2">
+                            <Label>Phone</Label>
+                            <Input
+                              placeholder="+1 234 567 8900"
+                              value={vcardPhone}
+                              onChange={(e) => setVcardPhone(e.target.value)}
+                            />
+                          </div>
+                          <div className="space-y-2">
+                            <Label>Email</Label>
+                            <Input
+                              type="email"
+                              placeholder="john@example.com"
+                              value={vcardEmail}
+                              onChange={(e) => setVcardEmail(e.target.value)}
+                            />
+                          </div>
+                          <div className="grid grid-cols-2 gap-3">
+                            <div className="space-y-2">
+                              <Label>Company</Label>
+                              <Input
+                                placeholder="Acme Inc"
+                                value={vcardCompany}
+                                onChange={(e) => setVcardCompany(e.target.value)}
+                              />
+                            </div>
+                            <div className="space-y-2">
+                              <Label>Title</Label>
+                              <Input
+                                placeholder="CEO"
+                                value={vcardTitle}
+                                onChange={(e) => setVcardTitle(e.target.value)}
+                              />
+                            </div>
+                          </div>
+                          <div className="space-y-2">
+                            <Label>Website</Label>
+                            <Input
+                              placeholder="https://example.com"
+                              value={vcardWebsite}
+                              onChange={(e) => setVcardWebsite(e.target.value)}
+                            />
+                          </div>
+                        </motion.div>
+                      )}
+
+                      {mode === 'email' && (
+                        <motion.div
+                          key="email"
+                          initial={{ opacity: 0, y: 10 }}
+                          animate={{ opacity: 1, y: 0 }}
+                          exit={{ opacity: 0, y: -10 }}
+                          className="space-y-4"
+                        >
+                          <div className="space-y-2">
+                            <Label>Email Address</Label>
+                            <Input
+                              type="email"
+                              placeholder="hello@example.com"
+                              value={emailValue}
+                              onChange={(e) => setEmailValue(e.target.value)}
+                            />
+                          </div>
+                          <div className="space-y-2">
+                            <Label>Subject (optional)</Label>
+                            <Input
+                              placeholder="Subject line..."
+                              value={emailSubject}
+                              onChange={(e) => setEmailSubject(e.target.value)}
+                            />
+                          </div>
+                          <div className="space-y-2">
+                            <Label>Body (optional)</Label>
+                            <Textarea
+                              placeholder="Email body..."
+                              value={emailBody}
+                              onChange={(e) => setEmailBody(e.target.value)}
+                              rows={3}
+                            />
+                          </div>
+                        </motion.div>
+                      )}
+                    </AnimatePresence>
+                  </CardContent>
+                </Card>
+
+                {/* Design Style */}
+                <Card className="glass-card">
+                  <CardHeader className="pb-4">
+                    <CardTitle className="flex items-center gap-2 text-lg">
+                      <Palette className="h-5 w-5 text-primary" />
+                      Design Style
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <DesignSelector
+                      options={DESIGN_STYLES}
+                      value={designStyle}
+                      onChange={(v) => setDesignStyle(v as QRDesignStyle)}
+                      columns={3}
+                    />
+                  </CardContent>
+                </Card>
+
+                {/* Colors */}
+                <Card className="glass-card">
+                  <CardHeader className="pb-4">
+                    <div className="flex items-center justify-between">
                       <CardTitle className="flex items-center gap-2 text-lg">
                         <Palette className="h-5 w-5 text-primary" />
-                        Design Style
+                        Colors
                       </CardTitle>
-                    </CardHeader>
-                    <CardContent>
-                      <DesignSelector
-                        options={DESIGN_STYLES}
-                        value={designStyle}
-                        onChange={(v) => setDesignStyle(v as QRDesignStyle)}
-                        columns={3}
-                      />
-                    </CardContent>
-                  </Card>
+                      <Switch checked={customColors} onCheckedChange={setCustomColors} />
+                    </div>
+                  </CardHeader>
+                  <AnimatePresence>
+                    {customColors && (
+                      <motion.div
+                        initial={{ height: 0, opacity: 0 }}
+                        animate={{ height: 'auto', opacity: 1 }}
+                        exit={{ height: 0, opacity: 0 }}
+                      >
+                        <CardContent className="pt-0 space-y-6">
+                          {/* Color Presets */}
+                          <ColorPresets
+                            selectedPreset={selectedPreset}
+                            onSelectPreset={handlePresetSelect}
+                          />
 
-                  {/* Colors */}
-                  <Card className="glass-card">
-                    <CardHeader className="pb-4">
-                      <div className="flex items-center justify-between">
-                        <CardTitle className="flex items-center gap-2 text-lg">
-                          <Palette className="h-5 w-5 text-primary" />
-                          Custom Colors
-                        </CardTitle>
-                        <Switch checked={customColors} onCheckedChange={setCustomColors} />
-                      </div>
-                    </CardHeader>
-                    <AnimatePresence>
-                      {customColors && (
-                        <motion.div
-                          initial={{ height: 0, opacity: 0 }}
-                          animate={{ height: 'auto', opacity: 1 }}
-                          exit={{ height: 0, opacity: 0 }}
-                        >
-                          <CardContent className="pt-0">
+                          {/* Custom Colors */}
+                          <div className="space-y-2">
+                            <Label className="text-sm font-medium">Custom Colors</Label>
                             <div className="flex gap-4">
                               <div className="flex-1 space-y-2">
-                                <Label>Foreground</Label>
+                                <Label className="text-xs text-muted-foreground">Foreground</Label>
                                 <div className="flex items-center gap-2">
                                   <input
                                     type="color"
                                     value={fgColor}
-                                    onChange={(e) => setFgColor(e.target.value)}
-                                    className="w-12 h-12 rounded-lg border-2 border-border cursor-pointer"
+                                    onChange={(e) => {
+                                      setFgColor(e.target.value);
+                                      setSelectedPreset(null);
+                                    }}
+                                    className="w-10 h-10 rounded-lg border-2 border-border cursor-pointer"
                                   />
                                   <Input
                                     value={fgColor}
-                                    onChange={(e) => setFgColor(e.target.value)}
-                                    className="flex-1 font-mono text-sm"
+                                    onChange={(e) => {
+                                      setFgColor(e.target.value);
+                                      setSelectedPreset(null);
+                                    }}
+                                    className="flex-1 font-mono text-xs"
                                   />
                                 </div>
                               </div>
                               <div className="flex-1 space-y-2">
-                                <Label>Background</Label>
+                                <Label className="text-xs text-muted-foreground">Background</Label>
                                 <div className="flex items-center gap-2">
                                   <input
                                     type="color"
                                     value={bgColor}
-                                    onChange={(e) => setBgColor(e.target.value)}
-                                    className="w-12 h-12 rounded-lg border-2 border-border cursor-pointer"
+                                    onChange={(e) => {
+                                      setBgColor(e.target.value);
+                                      setSelectedPreset(null);
+                                    }}
+                                    className="w-10 h-10 rounded-lg border-2 border-border cursor-pointer"
                                   />
                                   <Input
                                     value={bgColor}
-                                    onChange={(e) => setBgColor(e.target.value)}
-                                    className="flex-1 font-mono text-sm"
+                                    onChange={(e) => {
+                                      setBgColor(e.target.value);
+                                      setSelectedPreset(null);
+                                    }}
+                                    className="flex-1 font-mono text-xs"
                                   />
                                 </div>
                               </div>
                             </div>
-                          </CardContent>
-                        </motion.div>
-                      )}
-                    </AnimatePresence>
-                  </Card>
+                          </div>
+                        </CardContent>
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
+                </Card>
 
-                  {/* Logo */}
-                  <Card className="glass-card">
-                    <CardHeader className="pb-4">
-                      <div className="flex items-center justify-between">
-                        <CardTitle className="flex items-center gap-2 text-lg">
-                          <Image className="h-5 w-5 text-primary" />
-                          Add Logo
-                        </CardTitle>
-                        <Switch checked={enableLogo} onCheckedChange={setEnableLogo} />
-                      </div>
-                    </CardHeader>
-                    <AnimatePresence>
-                      {enableLogo && (
-                        <motion.div
-                          initial={{ height: 0, opacity: 0 }}
-                          animate={{ height: 'auto', opacity: 1 }}
-                          exit={{ height: 0, opacity: 0 }}
-                        >
-                          <CardContent className="pt-0 space-y-6">
-                            <LogoManager
-                              selectedLogo={selectedLogo}
-                              onLogoChange={setSelectedLogo}
-                              urlValue={urlValue}
+                {/* Logo */}
+                <Card className="glass-card">
+                  <CardHeader className="pb-4">
+                    <div className="flex items-center justify-between">
+                      <CardTitle className="flex items-center gap-2 text-lg">
+                        <Image className="h-5 w-5 text-primary" />
+                        Add Logo
+                      </CardTitle>
+                      <Switch checked={enableLogo} onCheckedChange={setEnableLogo} />
+                    </div>
+                  </CardHeader>
+                  <AnimatePresence>
+                    {enableLogo && (
+                      <motion.div
+                        initial={{ height: 0, opacity: 0 }}
+                        animate={{ height: 'auto', opacity: 1 }}
+                        exit={{ height: 0, opacity: 0 }}
+                      >
+                        <CardContent className="pt-0 space-y-6">
+                          <LogoManager
+                            selectedLogo={selectedLogo}
+                            onLogoChange={setSelectedLogo}
+                            urlValue={urlValue}
+                          />
+
+                          <div className="space-y-2">
+                            <Label>Logo Shape</Label>
+                            <DesignSelector
+                              options={LOGO_SHAPES}
+                              value={logoShape}
+                              onChange={(v) => setLogoShape(v as LogoShape)}
+                              columns={3}
                             />
+                          </div>
 
-                            <div className="space-y-2">
-                              <Label>Logo Shape</Label>
-                              <DesignSelector
-                                options={LOGO_SHAPES}
-                                value={logoShape}
-                                onChange={(v) => setLogoShape(v as LogoShape)}
-                                columns={3}
-                              />
+                          <div className="space-y-2">
+                            <Label>Logo Position</Label>
+                            <DesignSelector
+                              options={LOGO_LAYOUTS}
+                              value={logoLayout}
+                              onChange={(v) => setLogoLayout(v as LogoLayout)}
+                              columns={3}
+                            />
+                          </div>
+
+                          <div className="space-y-2">
+                            <div className="flex items-center justify-between">
+                              <Label>Logo Size</Label>
+                              <span className="text-sm text-muted-foreground">{logoSize}%</span>
                             </div>
+                            <Slider
+                              value={[logoSize]}
+                              onValueChange={(v) => setLogoSize(v[0])}
+                              min={10}
+                              max={25}
+                              step={1}
+                            />
+                            {logoSize > 20 && (
+                              <p className="text-xs text-warning">
+                                ⚠️ Large logos may affect scannability
+                              </p>
+                            )}
+                          </div>
+                        </CardContent>
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
+                </Card>
 
-                            <div className="space-y-2">
-                              <Label>Logo Position</Label>
-                              <DesignSelector
-                                options={LOGO_LAYOUTS}
-                                value={logoLayout}
-                                onChange={(v) => setLogoLayout(v as LogoLayout)}
-                                columns={3}
-                              />
-                            </div>
-
-                            <div className="space-y-2">
-                              <div className="flex items-center justify-between">
-                                <Label>Logo Size</Label>
-                                <span className="text-sm text-muted-foreground">{logoSize}%</span>
-                              </div>
-                              <Slider
-                                value={[logoSize]}
-                                onValueChange={(v) => setLogoSize(v[0])}
-                                min={10}
-                                max={25}
-                                step={1}
-                              />
-                              {logoSize > 20 && (
-                                <p className="text-xs text-warning">
-                                  ⚠️ Large logos may affect scannability
-                                </p>
-                              )}
-                            </div>
-                          </CardContent>
-                        </motion.div>
-                      )}
-                    </AnimatePresence>
-                  </Card>
-
-                  {/* Border */}
-                  <Card className="glass-card">
-                    <CardHeader className="pb-4">
-                      <div className="flex items-center justify-between">
-                        <CardTitle className="flex items-center gap-2 text-lg">
-                          <Frame className="h-5 w-5 text-primary" />
-                          Add Border
-                        </CardTitle>
-                        <Switch checked={enableBorder} onCheckedChange={setEnableBorder} />
-                      </div>
-                    </CardHeader>
-                    <AnimatePresence>
-                      {enableBorder && (
-                        <motion.div
-                          initial={{ height: 0, opacity: 0 }}
-                          animate={{ height: 'auto', opacity: 1 }}
-                          exit={{ height: 0, opacity: 0 }}
-                        >
-                          <CardContent className="pt-0 space-y-4">
-                            <div className="space-y-2">
-                              <div className="flex items-center justify-between">
-                                <Label>Border Width</Label>
-                                <span className="text-sm text-muted-foreground">{borderWidth}px</span>
-                              </div>
-                              <Slider
-                                value={[borderWidth]}
-                                onValueChange={(v) => setBorderWidth(v[0])}
-                                min={5}
-                                max={50}
-                                step={5}
-                              />
-                            </div>
-                            <div className="space-y-2">
-                              <Label>Border Color</Label>
-                              <div className="flex items-center gap-2">
-                                <input
-                                  type="color"
-                                  value={borderColor}
-                                  onChange={(e) => setBorderColor(e.target.value)}
-                                  className="w-12 h-12 rounded-lg border-2 border-border cursor-pointer"
-                                />
-                                <Input
-                                  value={borderColor}
-                                  onChange={(e) => setBorderColor(e.target.value)}
-                                  className="flex-1 font-mono text-sm"
-                                />
-                              </div>
-                            </div>
-                          </CardContent>
-                        </motion.div>
-                      )}
-                    </AnimatePresence>
-                  </Card>
-                </div>
-
-                {/* Right Column - Preview & Actions */}
-                <div className="lg:sticky lg:top-6 space-y-6 h-fit">
-                  <Card className="glass-card">
-                    <CardContent className="p-6">
-                      <QRPreview
-                        canvasRef={canvasRef}
-                        hasQR={hasQR}
-                        hasBorder={enableBorder}
-                        verificationStatus={verificationStatus}
-                        verificationMessage={verificationMessage}
-                      />
-
-                      {/* Preview Content */}
-                      {previewContent && (
-                        <div className="mt-4 p-3 rounded-lg bg-secondary/50 border border-border">
-                          <p className="text-xs text-muted-foreground mb-1">Preview:</p>
-                          <p className="text-sm font-mono break-all">{previewContent}</p>
-                        </div>
-                      )}
-
-                      {/* Generate Button */}
-                      <Button
-                        onClick={generateQR}
-                        disabled={isGenerating || !isContentValid()}
-                        className="w-full mt-6 h-12 text-base font-semibold gradient-primary text-white shadow-glow hover:shadow-glow-accent transition-all"
+                {/* Border */}
+                <Card className="glass-card">
+                  <CardHeader className="pb-4">
+                    <div className="flex items-center justify-between">
+                      <CardTitle className="flex items-center gap-2 text-lg">
+                        <Frame className="h-5 w-5 text-primary" />
+                        Add Border
+                      </CardTitle>
+                      <Switch checked={enableBorder} onCheckedChange={setEnableBorder} />
+                    </div>
+                  </CardHeader>
+                  <AnimatePresence>
+                    {enableBorder && (
+                      <motion.div
+                        initial={{ height: 0, opacity: 0 }}
+                        animate={{ height: 'auto', opacity: 1 }}
+                        exit={{ height: 0, opacity: 0 }}
                       >
-                        {isGenerating ? (
-                          <>
-                            <motion.span
-                              animate={{ rotate: 360 }}
-                              transition={{ duration: 1, repeat: Infinity, ease: 'linear' }}
-                            >
-                              <Zap className="h-5 w-5 mr-2" />
-                            </motion.span>
-                            Generating...
-                          </>
-                        ) : (
-                          <>
+                        <CardContent className="pt-0 space-y-4">
+                          <div className="space-y-2">
+                            <div className="flex items-center justify-between">
+                              <Label>Border Width</Label>
+                              <span className="text-sm text-muted-foreground">{borderWidth}px</span>
+                            </div>
+                            <Slider
+                              value={[borderWidth]}
+                              onValueChange={(v) => setBorderWidth(v[0])}
+                              min={5}
+                              max={50}
+                              step={5}
+                            />
+                          </div>
+                          <div className="space-y-2">
+                            <Label>Border Color</Label>
+                            <div className="flex items-center gap-2">
+                              <input
+                                type="color"
+                                value={borderColor}
+                                onChange={(e) => setBorderColor(e.target.value)}
+                                className="w-10 h-10 rounded-lg border-2 border-border cursor-pointer"
+                              />
+                              <Input
+                                value={borderColor}
+                                onChange={(e) => setBorderColor(e.target.value)}
+                                className="flex-1 font-mono text-sm"
+                              />
+                            </div>
+                          </div>
+                        </CardContent>
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
+                </Card>
+              </div>
+
+              {/* Right Column - Preview & Actions */}
+              <div className="lg:sticky lg:top-6 space-y-6 h-fit">
+                <Card className="glass-card">
+                  <CardContent className="p-6">
+                    <QRPreview
+                      canvasRef={canvasRef}
+                      hasQR={hasQR}
+                      hasBorder={enableBorder}
+                      verificationStatus={verificationStatus}
+                      verificationMessage={verificationMessage}
+                    />
+
+                    {/* Preview Content */}
+                    {previewContent && (
+                      <div className="mt-4 p-3 rounded-lg bg-secondary/50 border border-border">
+                        <p className="text-xs text-muted-foreground mb-1">Preview:</p>
+                        <p className="text-sm font-mono break-all">{previewContent}</p>
+                      </div>
+                    )}
+
+                    {/* Generate Button */}
+                    <Button
+                      onClick={generateQR}
+                      disabled={isGenerating || !isContentValid()}
+                      className="w-full mt-6 h-12 text-base font-semibold gradient-primary text-white shadow-glow hover:shadow-glow-accent transition-all"
+                    >
+                      {isGenerating ? (
+                        <>
+                          <motion.span
+                            animate={{ rotate: 360 }}
+                            transition={{ duration: 1, repeat: Infinity, ease: 'linear' }}
+                          >
                             <Zap className="h-5 w-5 mr-2" />
-                            Generate QR Code
-                          </>
-                        )}
-                      </Button>
+                          </motion.span>
+                          Generating...
+                        </>
+                      ) : (
+                        <>
+                          <Zap className="h-5 w-5 mr-2" />
+                          Generate QR Code
+                        </>
+                      )}
+                    </Button>
 
-                      {/* Action Buttons */}
-                      <div className="grid grid-cols-3 gap-2 mt-4">
-                        <Button
-                          variant="outline"
-                          onClick={handleDownload}
-                          disabled={!hasQR}
-                          className="gap-2"
-                        >
-                          <Download className="h-4 w-4" />
-                          <span className="hidden sm:inline">Download</span>
-                        </Button>
-                        <Button
-                          variant="outline"
-                          onClick={handleCopy}
-                          disabled={!hasQR}
-                          className="gap-2"
-                        >
-                          <Copy className="h-4 w-4" />
-                          <span className="hidden sm:inline">Copy</span>
-                        </Button>
-                        <Button
-                          variant="outline"
-                          onClick={handleShare}
-                          disabled={!hasQR}
-                          className="gap-2"
-                        >
-                          <Share2 className="h-4 w-4" />
-                          <span className="hidden sm:inline">Share</span>
-                        </Button>
-                      </div>
-
-                      {/* Reset Button */}
+                    {/* Action Buttons */}
+                    <div className="grid grid-cols-2 gap-2 mt-4">
                       <Button
-                        variant="ghost"
-                        onClick={handleReset}
-                        className="w-full mt-2 text-muted-foreground"
+                        variant="outline"
+                        onClick={handleDownload}
+                        disabled={!hasQR}
+                        className="gap-2"
                       >
-                        <RotateCcw className="h-4 w-4 mr-2" />
-                        Reset All
+                        <Download className="h-4 w-4" />
+                        Download
                       </Button>
-                    </CardContent>
-                  </Card>
-                </div>
-              </div>
-            </TabsContent>
+                      <Button
+                        variant="outline"
+                        onClick={handleCopy}
+                        disabled={!hasQR}
+                        className="gap-2"
+                      >
+                        <Copy className="h-4 w-4" />
+                        Copy
+                      </Button>
+                      <Button
+                        variant="outline"
+                        onClick={handleShare}
+                        disabled={!hasQR}
+                        className="gap-2"
+                      >
+                        <Share2 className="h-4 w-4" />
+                        Share
+                      </Button>
+                      <PrintDialog 
+                        qrDataUrl={qrDataUrl}
+                        qrContent={previewContent}
+                      />
+                    </div>
 
-            {/* Scan Tab */}
-            <TabsContent value="scan">
-              <div className="max-w-lg mx-auto">
-                <QRScanner onContentExtracted={handleExtractedContent} />
+                    {/* Reset Button */}
+                    <Button
+                      variant="ghost"
+                      onClick={handleReset}
+                      className="w-full mt-2 text-muted-foreground"
+                    >
+                      <RotateCcw className="h-4 w-4 mr-2" />
+                      Reset All
+                    </Button>
+                  </CardContent>
+                </Card>
               </div>
-            </TabsContent>
+            </div>
+          </TabsContent>
 
-            {/* History Tab */}
-            <TabsContent value="history">
-              <QRHistory
-                history={history}
-                onLoadHistory={loadFromHistory}
-                onClearHistory={clearHistory}
+          {/* Batch Tab */}
+          <TabsContent value="batch">
+            <div className="max-w-2xl mx-auto">
+              <BatchGenerator
+                designStyle={designStyle}
+                fgColor={customColors ? fgColor : '#000000'}
+                bgColor={customColors ? bgColor : '#ffffff'}
               />
-            </TabsContent>
-          </Tabs>
+            </div>
+          </TabsContent>
 
-          {/* Footer */}
-          <footer className="mt-16 py-8 text-center border-t border-border">
-            <p className="text-sm text-muted-foreground">
-              Made with ❤️ • Smart QR Generator
-            </p>
-          </footer>
-        </div>
+          {/* Scan Tab */}
+          <TabsContent value="scan">
+            <div className="max-w-lg mx-auto">
+              <QRScanner onContentExtracted={handleExtractedContent} />
+            </div>
+          </TabsContent>
+
+          {/* History Tab */}
+          <TabsContent value="history">
+            <QRHistory
+              history={history}
+              onLoadHistory={loadFromHistory}
+              onClearHistory={clearHistory}
+            />
+          </TabsContent>
+        </Tabs>
+
+        {/* Footer */}
+        <footer className="mt-16 py-8 text-center border-t border-border no-print">
+          <p className="text-sm text-muted-foreground">
+            Made with ❤️ • Smart QR Generator
+          </p>
+        </footer>
       </div>
-    </>
+    </div>
   );
 };
 
