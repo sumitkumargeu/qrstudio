@@ -383,6 +383,11 @@ const Index = () => {
     }
   }, []);
 
+  // Handle content change from live preview
+  const handleContentChange = useCallback((content: string) => {
+    setPreviewContent(content);
+  }, []);
+
   // Quick download without dialog
   const handleQuickDownload = async () => {
     if (!previewContent) return;
@@ -1022,7 +1027,8 @@ const Index = () => {
                 <Card className="glass-card">
                   <CardContent className="p-6">
                     <LivePreview
-                      content={previewContent}
+                      mode={mode}
+                      formData={getFormData()}
                       designStyle={designStyle}
                       fgColor={customColors ? fgColor : '#000000'}
                       bgColor={customColors ? bgColor : '#ffffff'}
@@ -1037,6 +1043,7 @@ const Index = () => {
                       verificationStatus={verificationStatus}
                       verificationMessage={verificationMessage}
                       onCanvasReady={handleCanvasReady}
+                      onContentChange={handleContentChange}
                     />
 
                     {/* Preview Content */}
@@ -1120,12 +1127,8 @@ const Index = () => {
 
           {/* Batch Tab */}
           <TabsContent value="batch">
-            <div className="max-w-2xl mx-auto">
-              <BatchGenerator
-                designStyle={designStyle}
-                fgColor={customColors ? fgColor : '#000000'}
-                bgColor={customColors ? bgColor : '#ffffff'}
-              />
+            <div className="max-w-5xl mx-auto">
+              <BatchGenerator />
             </div>
           </TabsContent>
 

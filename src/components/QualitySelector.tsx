@@ -9,13 +9,14 @@ import {
 } from '@/components/ui/select';
 import { Sparkles } from 'lucide-react';
 
-export type QRQuality = 'standard' | 'high' | 'ultra' | '4k';
+export type QRQuality = 'standard' | 'high' | 'ultra' | '4k' | '8k' | '16k';
 
 export interface QualityOption {
   value: QRQuality;
   label: string;
   size: number;
   description: string;
+  badge?: string;
 }
 
 export const QUALITY_OPTIONS: QualityOption[] = [
@@ -23,6 +24,8 @@ export const QUALITY_OPTIONS: QualityOption[] = [
   { value: 'high', label: 'High', size: 1024, description: '1024×1024 px (HD)' },
   { value: 'ultra', label: 'Ultra', size: 2048, description: '2048×2048 px (2K)' },
   { value: '4k', label: '4K UHD', size: 4096, description: '4096×4096 px (4K)' },
+  { value: '8k', label: '8K UHD', size: 8192, description: '8192×8192 px (8K)', badge: 'PRO' },
+  { value: '16k', label: '16K Ultra', size: 16384, description: '16384×16384 px (16K)', badge: 'MAX' },
 ];
 
 interface QualitySelectorProps {
@@ -49,6 +52,11 @@ export function QualitySelector({ value, onChange, className }: QualitySelectorP
             <SelectItem key={option.value} value={option.value}>
               <div className="flex items-center justify-between gap-4">
                 <span className="font-medium">{option.label}</span>
+                {option.badge && (
+                  <span className="px-1.5 py-0.5 text-[10px] font-bold bg-primary/20 text-primary rounded">
+                    {option.badge}
+                  </span>
+                )}
                 <span className="text-xs text-muted-foreground">{option.description}</span>
               </div>
             </SelectItem>
@@ -57,8 +65,10 @@ export function QualitySelector({ value, onChange, className }: QualitySelectorP
       </Select>
       {selectedOption && (
         <p className="text-xs text-muted-foreground">
-          Output: {selectedOption.size} × {selectedOption.size} pixels
+          Output: {selectedOption.size.toLocaleString()} × {selectedOption.size.toLocaleString()} pixels
           {selectedOption.value === '4k' && ' • Ultra high quality for print'}
+          {selectedOption.value === '8k' && ' • Professional grade, massive file'}
+          {selectedOption.value === '16k' && ' • Maximum quality, very large file'}
         </p>
       )}
     </div>
