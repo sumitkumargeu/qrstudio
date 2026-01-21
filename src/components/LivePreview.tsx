@@ -1,13 +1,16 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { cn } from '@/lib/utils';
-import type { VerificationStatus, QRDesignStyle, LogoItem, LogoShape, LogoLayout } from '@/lib/qr-types';
-import { generateQRCanvas, applyDesignStyle, addLogoToCanvas, addBorderToCanvas } from '@/lib/qr-utils';
+import type { VerificationStatus, QRDesignStyle, LogoItem, LogoShape, LogoLayout, QRMode } from '@/lib/qr-types';
+import { generateQRCanvas, generateQRContent, applyDesignStyle, addLogoToCanvas, addBorderToCanvas } from '@/lib/qr-utils';
 import { CheckCircle, AlertTriangle, XCircle, Loader2, Eye, EyeOff } from 'lucide-react';
 import { Button } from './ui/button';
 
 interface LivePreviewProps {
-  content: string;
+  // Form data for generating content
+  mode: QRMode;
+  formData: Record<string, string>;
+  // Design options
   designStyle: QRDesignStyle;
   fgColor: string;
   bgColor: string;
@@ -19,13 +22,17 @@ interface LivePreviewProps {
   enableBorder: boolean;
   borderWidth: number;
   borderColor: string;
+  // Status
   verificationStatus: VerificationStatus;
   verificationMessage: string;
+  // Callbacks
   onCanvasReady: (canvas: HTMLCanvasElement | null) => void;
+  onContentChange: (content: string) => void;
 }
 
 export function LivePreview({
-  content,
+  mode,
+  formData,
   designStyle,
   fgColor,
   bgColor,
@@ -40,6 +47,7 @@ export function LivePreview({
   verificationStatus,
   verificationMessage,
   onCanvasReady,
+  onContentChange,
 }: LivePreviewProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [isGenerating, setIsGenerating] = useState(false);
@@ -47,8 +55,44 @@ export function LivePreview({
   const [livePreviewEnabled, setLivePreviewEnabled] = useState(true);
   const debounceRef = useRef<NodeJS.Timeout>();
 
+  // Generate content from form data
+  const content = useMemo(() => {
+    try {
+      return generateQRContent(mode, formData);
+    } catch {
+      return '';
+    }
+  }, [mode, formData]);
+
+  // Check if content is valid for QR generation
+  const isContentValid = useMemo(() => {
+    if (!content || content.length < 3) return false;
+    
+    switch (mode) {
+      case 'url':
+        return formData.url?.trim().length >= 3;
+      case 'whatsapp':
+        return formData.phone?.replace(/\D/g, '').length >= 7;
+      case 'text':
+        return formData.text?.trim().length > 0;
+      case 'wifi':
+        return formData.ssid?.trim().length > 0;
+      case 'vcard':
+        return (formData.firstName?.trim().length > 0) || (formData.lastName?.trim().length > 0);
+      case 'email':
+        return formData.email?.includes('@');
+      default:
+        return content.length > 0;
+    }
+  }, [mode, formData, content]);
+
+  // Notify parent of content changes
   useEffect(() => {
-    if (!livePreviewEnabled || !content || content.length < 3) {
+    onContentChange(content);
+  }, [content, onContentChange]);
+
+  useEffect(() => {
+    if (!livePreviewEnabled || !isContentValid) {
       setHasQR(false);
       onCanvasReady(null);
       return;
@@ -106,7 +150,7 @@ export function LivePreview({
       } finally {
         setIsGenerating(false);
       }
-    }, 300);
+    }, 250); // Faster debounce for more responsive feel
 
     return () => {
       if (debounceRef.current) {
@@ -114,7 +158,7 @@ export function LivePreview({
       }
     };
   }, [
-    content, designStyle, fgColor, bgColor,
+    content, isContentValid, designStyle, fgColor, bgColor,
     enableLogo, logo, logoShape, logoLayout, logoSize,
     enableBorder, borderWidth, borderColor, livePreviewEnabled, onCanvasReady
   ]);

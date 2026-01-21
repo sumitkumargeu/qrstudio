@@ -1,3 +1,4 @@
+import { forwardRef } from 'react';
 import { motion } from 'framer-motion';
 import { cn } from '@/lib/utils';
 import { Check, Sparkles } from 'lucide-react';
@@ -83,7 +84,8 @@ interface ColorPresetsProps {
   onSelectPreset: (preset: ColorPreset) => void;
 }
 
-export function ColorPresets({ selectedPreset, onSelectPreset }: ColorPresetsProps) {
+export const ColorPresets = forwardRef<HTMLDivElement, ColorPresetsProps>(
+  function ColorPresets({ selectedPreset, onSelectPreset }, ref) {
   return (
     <div className="space-y-4">
       {/* Solid Colors */}
@@ -172,4 +174,4 @@ export function ColorPresets({ selectedPreset, onSelectPreset }: ColorPresetsPro
       </div>
     </div>
   );
-}
+});
