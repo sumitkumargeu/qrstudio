@@ -37,6 +37,7 @@ import {
   Palette,
   Image,
   Zap,
+  Download,
   Copy,
   Share2,
   RotateCcw,
@@ -382,6 +383,13 @@ const Index = () => {
     }
   }, []);
 
+  // Quick download without dialog
+  const handleQuickDownload = async () => {
+    if (!previewContent) return;
+    await handleDownload(`qr-${mode}`, 'high', 'png');
+    toast.success('QR code downloaded!');
+  };
+
   // Copy
   const handleCopy = async () => {
     if (!generatedCanvasRef.current) return;
@@ -389,7 +397,7 @@ const Index = () => {
     if (success) {
       toast.success('Copied to clipboard!');
     } else {
-      handleDownload();
+      await handleQuickDownload();
     }
   };
 
@@ -398,7 +406,7 @@ const Index = () => {
     if (!generatedCanvasRef.current) return;
     const success = await shareCanvas(generatedCanvasRef.current);
     if (!success) {
-      handleDownload();
+      await handleQuickDownload();
     }
   };
 
@@ -1013,12 +1021,22 @@ const Index = () => {
               <div className="lg:sticky lg:top-6 space-y-6 h-fit">
                 <Card className="glass-card">
                   <CardContent className="p-6">
-                    <QRPreview
-                      canvasRef={canvasRef}
-                      hasQR={hasQR}
-                      hasBorder={enableBorder}
+                    <LivePreview
+                      content={previewContent}
+                      designStyle={designStyle}
+                      fgColor={customColors ? fgColor : '#000000'}
+                      bgColor={customColors ? bgColor : '#ffffff'}
+                      enableLogo={enableLogo}
+                      logo={selectedLogo}
+                      logoShape={logoShape}
+                      logoLayout={logoLayout}
+                      logoSize={logoSize}
+                      enableBorder={enableBorder}
+                      borderWidth={borderWidth}
+                      borderColor={borderColor}
                       verificationStatus={verificationStatus}
                       verificationMessage={verificationMessage}
+                      onCanvasReady={handleCanvasReady}
                     />
 
                     {/* Preview Content */}
@@ -1055,15 +1073,12 @@ const Index = () => {
 
                     {/* Action Buttons */}
                     <div className="grid grid-cols-2 gap-2 mt-4">
-                      <Button
-                        variant="outline"
-                        onClick={handleDownload}
-                        disabled={!hasQR}
-                        className="gap-2"
-                      >
-                        <Download className="h-4 w-4" />
-                        Download
-                      </Button>
+                      <DownloadOptions
+                        qrDataUrl={qrDataUrl}
+                        qrContent={previewContent}
+                        onDownload={handleDownload}
+                        defaultFilename={`qr-${mode}`}
+                      />
                       <Button
                         variant="outline"
                         onClick={handleCopy}
