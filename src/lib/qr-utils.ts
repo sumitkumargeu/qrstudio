@@ -418,55 +418,108 @@ export function addBorderToCanvas(
   return newCanvas;
 }
 
-// Fetch favicon from URL
+// Fetch favicon from URL with improved reliability
 export async function fetchFavicon(url: string): Promise<string | null> {
   try {
-    const urlObj = new URL(url.startsWith('http') ? url : `https://${url}`);
-    const domain = urlObj.origin;
+    // Normalize URL
+    let normalizedUrl = url.trim();
+    if (!normalizedUrl.startsWith('http://') && !normalizedUrl.startsWith('https://')) {
+      normalizedUrl = 'https://' + normalizedUrl;
+    }
 
+    const urlObj = new URL(normalizedUrl);
+    const domain = urlObj.hostname;
+
+    // Multiple favicon sources with priority
     const sources = [
-      `https://www.google.com/s2/favicons?domain=${domain}&sz=128`,
-      `${domain}/favicon.ico`,
-      `${domain}/apple-touch-icon.png`,
-      `https://logo.clearbit.com/${urlObj.hostname}`,
+      // High-res favicon APIs (most reliable)
+      `https://www.google.com/s2/favicons?domain=${domain}&sz=256`,
+      `https://icons.duckduckgo.com/ip3/${domain}.ico`,
+      `https://logo.clearbit.com/${domain}`,
+      `https://api.faviconkit.com/${domain}/256`,
+      // Direct favicon paths
+      `${urlObj.origin}/apple-touch-icon.png`,
+      `${urlObj.origin}/apple-touch-icon-precomposed.png`,
+      `${urlObj.origin}/favicon-32x32.png`,
+      `${urlObj.origin}/favicon.ico`,
     ];
 
     for (const src of sources) {
       try {
-        const img = new Image();
-        img.crossOrigin = 'anonymous';
-
-        const loaded = await new Promise<boolean>((resolve) => {
-          img.onload = () => resolve(img.width > 16 && img.height > 16);
-          img.onerror = () => resolve(false);
-          img.src = src;
-          setTimeout(() => resolve(false), 3000);
-        });
-
-        if (loaded) {
-          // Convert to base64
-          const canvas = document.createElement('canvas');
-          canvas.width = 256;
-          canvas.height = 256;
-          const ctx = canvas.getContext('2d');
-          if (ctx) {
-            ctx.imageSmoothingEnabled = true;
-            ctx.imageSmoothingQuality = 'high';
-            const scale = Math.min(256 / img.width, 256 / img.height);
-            const x = (256 - img.width * scale) / 2;
-            const y = (256 - img.height * scale) / 2;
-            ctx.drawImage(img, x, y, img.width * scale, img.height * scale);
-            return canvas.toDataURL('image/png');
-          }
+        const result = await loadFaviconImage(src);
+        if (result) {
+          return result;
         }
       } catch {
         continue;
       }
     }
     return null;
-  } catch {
+  } catch (error) {
+    console.error('Favicon fetch error:', error);
     return null;
   }
+}
+
+// Helper function to load and convert favicon to base64
+async function loadFaviconImage(src: string): Promise<string | null> {
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.crossOrigin = 'anonymous';
+    
+    const timeout = setTimeout(() => {
+      img.src = '';
+      resolve(null);
+    }, 5000);
+
+    img.onload = () => {
+      clearTimeout(timeout);
+      
+      // Skip very small images (likely placeholder)
+      if (img.width < 16 || img.height < 16) {
+        resolve(null);
+        return;
+      }
+
+      try {
+        const canvas = document.createElement('canvas');
+        const size = 256;
+        canvas.width = size;
+        canvas.height = size;
+        const ctx = canvas.getContext('2d');
+        
+        if (ctx) {
+          ctx.imageSmoothingEnabled = true;
+          ctx.imageSmoothingQuality = 'high';
+          
+          // Calculate scaling to fit and center
+          const scale = Math.min(size / img.width, size / img.height);
+          const width = img.width * scale;
+          const height = img.height * scale;
+          const x = (size - width) / 2;
+          const y = (size - height) / 2;
+          
+          // Fill with white background for transparent images
+          ctx.fillStyle = '#ffffff';
+          ctx.fillRect(0, 0, size, size);
+          
+          ctx.drawImage(img, x, y, width, height);
+          resolve(canvas.toDataURL('image/png'));
+        } else {
+          resolve(null);
+        }
+      } catch {
+        resolve(null);
+      }
+    };
+
+    img.onerror = () => {
+      clearTimeout(timeout);
+      resolve(null);
+    };
+
+    img.src = src;
+  });
 }
 
 // Validate URL

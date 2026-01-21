@@ -10,12 +10,29 @@ import {
   Download, 
   Image as ImageIcon,
   Check,
-  Loader2
+  Loader2,
+  Palette
 } from 'lucide-react';
 import type { LogoItem } from '@/lib/qr-types';
 import { PRESET_LOGOS } from '@/lib/qr-types';
 import { fetchFavicon } from '@/lib/qr-utils';
 import { toast } from 'sonner';
+
+// Logo colors for preset logos
+const LOGO_COLORS: Record<string, string> = {
+  'whatsapp': '#25D366',
+  'instagram': '#E4405F',
+  'facebook': '#1877F2',
+  'linkedin': '#0A66C2',
+  'x': '#000000',
+  'youtube': '#FF0000',
+  'tiktok': '#000000',
+  'telegram': '#26A5E4',
+  'snapchat': '#FFFC00',
+  'discord': '#5865F2',
+  'spotify': '#1DB954',
+  'github': '#181717',
+};
 
 interface LogoManagerProps {
   selectedLogo: LogoItem | null;
@@ -27,6 +44,7 @@ export function LogoManager({ selectedLogo, onLogoChange, urlValue }: LogoManage
   const [isLoading, setIsLoading] = useState(false);
   const [customLogos, setCustomLogos] = useState<LogoItem[]>([]);
   const [fetchStatus, setFetchStatus] = useState<'idle' | 'loading' | 'success' | 'error'>('idle');
+  const [useOriginalColors, setUseOriginalColors] = useState(true);
 
   const allLogos = [...PRESET_LOGOS, ...customLogos];
 
@@ -40,19 +58,23 @@ export function LogoManager({ selectedLogo, onLogoChange, urlValue }: LogoManage
     setIsLoading(true);
 
     try {
-      const faviconData = await fetchFavicon(urlValue);
+      // Normalize the URL
+      let normalizedUrl = urlValue.trim();
+      if (!normalizedUrl.startsWith('http://') && !normalizedUrl.startsWith('https://')) {
+        normalizedUrl = 'https://' + normalizedUrl;
+      }
+
+      const faviconData = await fetchFavicon(normalizedUrl);
       
       if (faviconData) {
-        const hostname = new URL(
-          urlValue.startsWith('http') ? urlValue : `https://${urlValue}`
-        ).hostname;
+        const hostname = new URL(normalizedUrl).hostname;
 
         const newLogo: LogoItem = {
           id: `favicon-${Date.now()}`,
           name: hostname,
           type: 'auto',
           data: faviconData,
-          source: urlValue,
+          source: normalizedUrl,
         };
 
         setCustomLogos((prev) => [newLogo, ...prev]);
@@ -63,9 +85,10 @@ export function LogoManager({ selectedLogo, onLogoChange, urlValue }: LogoManage
         setFetchStatus('error');
         toast.error('Could not fetch favicon. Try uploading manually.');
       }
-    } catch {
+    } catch (error) {
+      console.error('Favicon fetch error:', error);
       setFetchStatus('error');
-      toast.error('Failed to fetch favicon');
+      toast.error('Failed to fetch favicon. Check the URL and try again.');
     } finally {
       setIsLoading(false);
       setTimeout(() => setFetchStatus('idle'), 3000);
@@ -143,6 +166,55 @@ export function LogoManager({ selectedLogo, onLogoChange, urlValue }: LogoManage
     }
   };
 
+  const getLogoStyle = (logo: LogoItem) => {
+    if (logo.type !== 'preset') return {};
+    
+    const color = LOGO_COLORS[logo.id];
+    if (!color || !useOriginalColors) return { filter: 'brightness(0)' };
+    
+    // Apply color filter for SVG logos
+    return {};
+  };
+
+  const renderLogoWithColor = (logo: LogoItem) => {
+    if (logo.type !== 'preset') {
+      return (
+        <img
+          src={logo.data}
+          alt={logo.name}
+          className="w-full h-full object-contain rounded"
+        />
+      );
+    }
+
+    const color = LOGO_COLORS[logo.id];
+    
+    if (useOriginalColors && color) {
+      return (
+        <div 
+          className="w-full h-full flex items-center justify-center"
+          style={{ backgroundColor: color }}
+        >
+          <img
+            src={logo.data}
+            alt={logo.name}
+            className="w-3/4 h-3/4 object-contain"
+            style={{ filter: 'brightness(0) invert(1)' }}
+          />
+        </div>
+      );
+    }
+
+    return (
+      <img
+        src={logo.data}
+        alt={logo.name}
+        className="w-full h-full object-contain"
+        style={{ filter: 'brightness(0)' }}
+      />
+    );
+  };
+
   return (
     <div className="space-y-4">
       {/* Fetch Favicon Button */}
@@ -151,7 +223,7 @@ export function LogoManager({ selectedLogo, onLogoChange, urlValue }: LogoManage
         <Button
           variant="outline"
           onClick={handleFetchFavicon}
-          disabled={isLoading}
+          disabled={isLoading || !urlValue || urlValue.length < 3}
           className={cn(
             'w-full gap-2 transition-all',
             fetchStatus === 'success' && 'border-success text-success',
@@ -181,7 +253,10 @@ export function LogoManager({ selectedLogo, onLogoChange, urlValue }: LogoManage
           )}
         </Button>
         <p className="text-xs text-muted-foreground">
-          Automatically fetches the website's favicon/logo
+          {urlValue && urlValue.length >= 3 
+            ? `Will fetch from: ${urlValue.startsWith('http') ? urlValue : 'https://' + urlValue}`
+            : 'Enter a URL above to auto-fetch its logo'
+          }
         </p>
       </div>
 
@@ -209,6 +284,22 @@ export function LogoManager({ selectedLogo, onLogoChange, urlValue }: LogoManage
             className="hidden"
           />
         </label>
+      </div>
+
+      {/* Color Toggle for Preset Logos */}
+      <div className="flex items-center justify-between p-3 rounded-lg bg-secondary/30">
+        <div className="flex items-center gap-2">
+          <Palette className="h-4 w-4 text-primary" />
+          <span className="text-sm">Show brand colors</span>
+        </div>
+        <Button
+          variant={useOriginalColors ? "default" : "outline"}
+          size="sm"
+          onClick={() => setUseOriginalColors(!useOriginalColors)}
+          className="h-7 px-3 text-xs"
+        >
+          {useOriginalColors ? 'Colored' : 'Monochrome'}
+        </Button>
       </div>
 
       {/* Logo Gallery */}
@@ -239,26 +330,14 @@ export function LogoManager({ selectedLogo, onLogoChange, urlValue }: LogoManage
                 whileTap={{ scale: 0.95 }}
                 onClick={() => onLogoChange(selectedLogo?.id === logo.id ? null : logo)}
                 className={cn(
-                  'relative aspect-square p-2 rounded-lg border-2 transition-all bg-white',
+                  'relative aspect-square p-1 rounded-lg border-2 transition-all bg-white overflow-hidden',
                   selectedLogo?.id === logo.id
                     ? 'border-primary shadow-glow'
                     : 'border-border hover:border-primary/50'
                 )}
+                title={logo.name}
               >
-                {logo.type === 'preset' ? (
-                  <img
-                    src={logo.data}
-                    alt={logo.name}
-                    className="w-full h-full object-contain"
-                    style={{ filter: 'brightness(0)' }}
-                  />
-                ) : (
-                  <img
-                    src={logo.data}
-                    alt={logo.name}
-                    className="w-full h-full object-contain rounded"
-                  />
-                )}
+                {renderLogoWithColor(logo)}
 
                 {/* Auto badge */}
                 {logo.type === 'auto' && (
@@ -274,7 +353,7 @@ export function LogoManager({ selectedLogo, onLogoChange, urlValue }: LogoManage
                       e.stopPropagation();
                       handleRemoveLogo(logo.id);
                     }}
-                    className="absolute -top-1 -left-1 p-0.5 rounded-full bg-destructive text-destructive-foreground opacity-0 group-hover:opacity-100 transition-opacity hover:scale-110"
+                    className="absolute -top-1 -left-1 p-0.5 rounded-full bg-destructive text-destructive-foreground hover:scale-110 transition-transform"
                   >
                     <X className="h-3 w-3" />
                   </button>
