@@ -8,12 +8,14 @@ import { ThemeToggle } from '@/components/ThemeToggle';
 import { ModeSelector } from '@/components/ModeSelector';
 import { DesignSelector } from '@/components/DesignSelector';
 import { LogoManager } from '@/components/LogoManager';
-import { QRPreview } from '@/components/QRPreview';
+import { LivePreview } from '@/components/LivePreview';
 import { QRScanner } from '@/components/QRScanner';
 import { QRHistory } from '@/components/QRHistory';
-import { ColorPresets, COLOR_PRESETS, GRADIENT_PRESETS, type ColorPreset } from '@/components/ColorPresets';
+import { ColorPresets, type ColorPreset } from '@/components/ColorPresets';
 import { BatchGenerator } from '@/components/BatchGenerator';
 import { PrintDialog } from '@/components/PrintDialog';
+import { DownloadOptions, type ImageFormat } from '@/components/DownloadOptions';
+import { type QRQuality, getQualitySize } from '@/components/QualitySelector';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
@@ -35,7 +37,6 @@ import {
   Palette,
   Image,
   Zap,
-  Download,
   Copy,
   Share2,
   RotateCcw,
@@ -45,7 +46,6 @@ import {
   ScanLine,
   History,
   Layers,
-  Printer,
 } from 'lucide-react';
 
 // Types & Utils
@@ -70,7 +70,6 @@ import {
   applyDesignStyle,
   addLogoToCanvas,
   addBorderToCanvas,
-  downloadCanvas,
   copyCanvasToClipboard,
   shareCanvas,
 } from '@/lib/qr-utils';
@@ -334,12 +333,54 @@ const Index = () => {
     setHistory((prev) => [item, ...prev.slice(0, 19)]);
   };
 
-  // Download
-  const handleDownload = () => {
-    if (!generatedCanvasRef.current) return;
-    downloadCanvas(generatedCanvasRef.current, `qr-${mode}`);
-    toast.success('QR code downloaded!');
+  // Download with options
+  const handleDownload = async (filename: string, quality: QRQuality, format: ImageFormat) => {
+    if (!previewContent) return;
+    
+    try {
+      const size = getQualitySize(quality);
+      
+      // Generate high-quality canvas
+      let canvas = await generateQRCanvas(previewContent, {
+        fgColor: customColors ? fgColor : '#000000',
+        bgColor: customColors ? bgColor : '#ffffff',
+        size,
+      });
+
+      canvas = applyDesignStyle(canvas, designStyle, customColors ? fgColor : '#000000', customColors ? bgColor : '#ffffff');
+
+      if (enableLogo && selectedLogo) {
+        canvas = await addLogoToCanvas(canvas, selectedLogo, {
+          shape: logoShape,
+          layout: logoLayout,
+          size: logoSize,
+          bgColor: customColors ? bgColor : '#ffffff',
+        });
+      }
+
+      if (enableBorder) {
+        canvas = addBorderToCanvas(canvas, borderWidth, borderColor);
+      }
+
+      const mimeType = format === 'jpeg' ? 'image/jpeg' : format === 'webp' ? 'image/webp' : 'image/png';
+      const link = document.createElement('a');
+      link.download = `${filename}.${format}`;
+      link.href = canvas.toDataURL(mimeType, 0.95);
+      link.click();
+    } catch (error) {
+      console.error('Download error:', error);
+      toast.error('Failed to download');
+    }
   };
+
+  // Handle live preview canvas ready
+  const handleCanvasReady = useCallback((canvas: HTMLCanvasElement | null) => {
+    generatedCanvasRef.current = canvas;
+    if (canvas) {
+      setQrDataUrl(canvas.toDataURL('image/png'));
+      setHasQR(true);
+    }
+  }, []);
 
   // Copy
   const handleCopy = async () => {
