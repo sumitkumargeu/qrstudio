@@ -131,7 +131,8 @@ export function BatchGenerator() {
       case 'url':
         return { url: line };
       case 'text':
-        return { text: line };
+        // For text mode, preserve line content as-is (supports multi-line via \\n escape)
+        return { text: line.replace(/\\n/g, '\n') };
       case 'whatsapp': {
         // Format: +91 1234567890 | Message
         const parts = line.split('|').map(p => p.trim());
@@ -346,6 +347,8 @@ export function BatchGenerator() {
     switch (batchMode) {
       case 'url':
         return `https://example.com\nhttps://google.com\nexample.org`;
+      case 'text':
+        return `Hello World\nLine 1\\nLine 2\\nLine 3\nAnother single line`;
       case 'whatsapp':
         return `+91 9876543210 | Hello\n+1 1234567890 | Hi there`;
       case 'email':
@@ -409,7 +412,8 @@ export function BatchGenerator() {
               {batchMode === 'email' && 'Format: email@example.com | Subject | Body'}
               {batchMode === 'wifi' && 'Format: SSID | Password | WPA/WEP/nopass'}
               {batchMode === 'vcard' && 'Format: FirstName LastName | Phone | Email | Company'}
-              {(batchMode === 'url' || batchMode === 'text') && 'One URL or text per line. Supports multi-line pasting.'}
+              {batchMode === 'url' && 'One URL per line. Supports multi-line pasting.'}
+              {batchMode === 'text' && 'One text per line. Use \\n for multi-line text within a single QR.'}
             </p>
           </div>
 
