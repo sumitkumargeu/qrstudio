@@ -10,6 +10,7 @@ import { DesignSelector } from '@/components/DesignSelector';
 import { LogoManager } from '@/components/LogoManager';
 import { LivePreview } from '@/components/LivePreview';
 import { QRScanner } from '@/components/QRScanner';
+import { BatchScanner } from '@/components/BatchScanner';
 import { QRHistory } from '@/components/QRHistory';
 import { ColorPresets, type ColorPreset } from '@/components/ColorPresets';
 import { BatchGenerator } from '@/components/BatchGenerator';
@@ -37,7 +38,6 @@ import {
   Palette,
   Image,
   Zap,
-  Download,
   Copy,
   Share2,
   RotateCcw,
@@ -334,7 +334,7 @@ const Index = () => {
     setHistory((prev) => [item, ...prev.slice(0, 19)]);
   };
 
-  // Download with options
+  // Download with options - uses toBlob for large canvases to avoid 0-byte files
   const handleDownload = async (filename: string, quality: QRQuality, format: ImageFormat) => {
     if (!previewContent) return;
     
@@ -364,10 +364,31 @@ const Index = () => {
       }
 
       const mimeType = format === 'jpeg' ? 'image/jpeg' : format === 'webp' ? 'image/webp' : 'image/png';
-      const link = document.createElement('a');
-      link.download = `${filename}.${format}`;
-      link.href = canvas.toDataURL(mimeType, 0.95);
-      link.click();
+      
+      // Use toBlob for large canvases (8K+) to avoid memory issues with toDataURL
+      if (size >= 8192) {
+        const blob = await new Promise<Blob | null>((resolve) => {
+          canvas.toBlob(resolve, mimeType, 0.95);
+        });
+        
+        if (!blob) {
+          throw new Error('Failed to generate image blob');
+        }
+        
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.download = `${filename}.${format}`;
+        link.href = url;
+        link.click();
+        
+        // Clean up blob URL after download
+        setTimeout(() => URL.revokeObjectURL(url), 1000);
+      } else {
+        const link = document.createElement('a');
+        link.download = `${filename}.${format}`;
+        link.href = canvas.toDataURL(mimeType, 0.95);
+        link.click();
+      }
     } catch (error) {
       console.error('Download error:', error);
       toast.error('Failed to download');
@@ -1134,8 +1155,14 @@ const Index = () => {
 
           {/* Scan Tab */}
           <TabsContent value="scan">
-            <div className="max-w-lg mx-auto">
+            <div className="max-w-3xl mx-auto grid md:grid-cols-2 gap-6">
               <QRScanner onContentExtracted={handleExtractedContent} />
+              <BatchScanner onContentsExtracted={(contents) => {
+                // Switch to batch tab and load contents
+                setActiveTab('batch');
+                // Contents will be joined with newlines for batch input
+                toast.success(`${contents.length} QR codes loaded to batch generator!`);
+              }} />
             </div>
           </TabsContent>
 
