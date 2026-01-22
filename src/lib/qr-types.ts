@@ -37,20 +37,26 @@ export interface LogoItem {
   source?: string;
 }
 
-// QR History Item
+// QR History Item - stores settings only (no image data) to save space
 export interface QRHistoryItem {
   id: string;
   type: QRMode;
   content: string;
   preview: string;
   timestamp: string;
-  dataUrl: string;
   design: QRDesignStyle;
   colors: {
     fg: string;
     bg: string;
   };
   hasBorder?: boolean;
+  borderWidth?: number;
+  borderColor?: string;
+  logoId?: string;
+  logoShape?: LogoShape;
+  logoLayout?: LogoLayout;
+  logoSize?: number;
+  formData?: Record<string, string>;
 }
 
 // Country Code

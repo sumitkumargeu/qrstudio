@@ -1,7 +1,6 @@
-import { useState, useRef } from 'react';
+import { useState, useRef, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Progress } from '@/components/ui/progress';
 import { 
@@ -15,6 +14,7 @@ import {
   FileImage,
   CheckCircle,
   XCircle,
+  Plus,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { Html5Qrcode } from 'html5-qrcode';
@@ -25,6 +25,7 @@ interface ScannedItem {
   content: string;
   status: 'pending' | 'scanning' | 'done' | 'error';
   error?: string;
+  file: File;
 }
 
 interface BatchScannerProps {
@@ -35,67 +36,103 @@ export function BatchScanner({ onContentsExtracted }: BatchScannerProps) {
   const [items, setItems] = useState<ScannedItem[]>([]);
   const [isScanning, setIsScanning] = useState(false);
   const [progress, setProgress] = useState(0);
+  const [isDragOver, setIsDragOver] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const addFiles = useCallback(async (files: FileList | File[]) => {
+    const fileArray = Array.from(files).filter(f => f.type.startsWith('image/'));
+    if (fileArray.length === 0) {
+      toast.error('Please select image files');
+      return;
+    }
+
+    const newItems: ScannedItem[] = fileArray.map((file, index) => ({
+      id: `scan-${Date.now()}-${index}-${Math.random().toString(36).substr(2, 9)}`,
+      filename: file.name,
+      content: '',
+      status: 'pending' as const,
+      file,
+    }));
+
+    setItems(prev => [...prev, ...newItems]);
+    toast.success(`${fileArray.length} image${fileArray.length > 1 ? 's' : ''} added`);
+
+    // Auto-scan new files
+    await scanFiles(newItems);
+  }, []);
 
   const handleFilesUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
     if (!files || files.length === 0) return;
-
-    const newItems: ScannedItem[] = Array.from(files).map((file, index) => ({
-      id: `scan-${Date.now()}-${index}`,
-      filename: file.name,
-      content: '',
-      status: 'pending' as const,
-    }));
-
-    setItems(newItems);
-    toast.success(`${files.length} images ready to scan`);
-
-    // Auto-start scanning
-    await scanAllFiles(Array.from(files), newItems);
+    await addFiles(files);
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
+    }
   };
 
-  const scanAllFiles = async (files: File[], itemsList: ScannedItem[]) => {
-    setIsScanning(true);
-    setProgress(0);
+  const handleDragOver = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragOver(true);
+  }, []);
 
-    const updatedItems = [...itemsList];
+  const handleDragLeave = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragOver(false);
+  }, []);
+
+  const handleDrop = useCallback(async (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragOver(false);
+    
+    const files = e.dataTransfer.files;
+    if (files && files.length > 0) {
+      await addFiles(files);
+    }
+  }, [addFiles]);
+
+  const scanFiles = async (filesToScan: ScannedItem[]) => {
+    if (filesToScan.length === 0) return;
+    
+    setIsScanning(true);
+    const startIndex = items.length;
+    
     const html5QrCode = new Html5Qrcode('batch-qr-reader-element');
 
-    for (let i = 0; i < files.length; i++) {
-      const file = files[i];
-      updatedItems[i] = { ...updatedItems[i], status: 'scanning' };
-      setItems([...updatedItems]);
+    for (let i = 0; i < filesToScan.length; i++) {
+      const item = filesToScan[i];
+      
+      setItems(prev => prev.map(p => 
+        p.id === item.id ? { ...p, status: 'scanning' } : p
+      ));
 
       try {
-        const result = await html5QrCode.scanFile(file, true);
-        updatedItems[i] = {
-          ...updatedItems[i],
-          status: 'done',
-          content: result,
-        };
+        const result = await html5QrCode.scanFile(item.file, true);
+        setItems(prev => prev.map(p => 
+          p.id === item.id ? { ...p, status: 'done', content: result } : p
+        ));
       } catch (err) {
         console.error('Scan error:', err);
-        updatedItems[i] = {
-          ...updatedItems[i],
-          status: 'error',
-          error: 'Could not read QR code',
-        };
+        setItems(prev => prev.map(p => 
+          p.id === item.id ? { ...p, status: 'error', error: 'Could not read QR code' } : p
+        ));
       }
 
-      setItems([...updatedItems]);
-      setProgress(((i + 1) / files.length) * 100);
+      setProgress(((i + 1) / filesToScan.length) * 100);
     }
 
     await html5QrCode.clear();
     setIsScanning(false);
+    setProgress(0);
 
-    const successCount = updatedItems.filter(i => i.status === 'done').length;
-    toast.success(`Scanned ${successCount} of ${files.length} QR codes`);
-
-    if (fileInputRef.current) {
-      fileInputRef.current.value = '';
-    }
+    const successCount = filesToScan.filter((_, i) => {
+      const idx = startIndex + i;
+      return items[idx]?.status === 'done';
+    }).length;
+    
+    toast.success(`Scanned ${filesToScan.length} QR code${filesToScan.length > 1 ? 's' : ''}`);
   };
 
   const handleRecreateAll = () => {
@@ -151,18 +188,26 @@ export function BatchScanner({ onContentsExtracted }: BatchScannerProps) {
           Batch QR Scanner
         </CardTitle>
         <CardDescription>
-          Upload multiple QR code images to scan and recreate them all at once
+          Upload QR code images to scan and recreate. You can add more images anytime.
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
         {/* Hidden QR reader element */}
         <div id="batch-qr-reader-element" className="hidden" />
 
-        {/* Upload Area */}
-        <label
-          className={`flex flex-col items-center justify-center gap-3 p-8 border-2 border-dashed rounded-xl cursor-pointer transition-all ${
-            isScanning
-              ? 'border-primary bg-primary/5'
+        {/* Dynamic Upload Area with Drag & Drop */}
+        <div
+          onDragOver={handleDragOver}
+          onDragLeave={handleDragLeave}
+          onDrop={handleDrop}
+          onClick={() => !isScanning && fileInputRef.current?.click()}
+          className={`flex flex-col items-center justify-center gap-3 p-6 border-2 border-dashed rounded-xl cursor-pointer transition-all ${
+            isDragOver
+              ? 'border-primary bg-primary/10 scale-[1.02]'
+              : isScanning
+              ? 'border-primary/50 bg-primary/5 cursor-wait'
+              : items.length > 0
+              ? 'border-border hover:border-primary/50 hover:bg-secondary/30'
               : 'border-border hover:border-primary/50 hover:bg-secondary/30'
           }`}
         >
@@ -172,22 +217,30 @@ export function BatchScanner({ onContentsExtracted }: BatchScannerProps) {
                 animate={{ rotate: 360 }}
                 transition={{ duration: 1, repeat: Infinity, ease: 'linear' }}
               >
-                <RefreshCw className="h-10 w-10 text-primary" />
+                <RefreshCw className="h-8 w-8 text-primary" />
               </motion.div>
-              <span className="text-sm font-medium">Scanning {items.length} images...</span>
+              <span className="text-sm font-medium">Scanning...</span>
             </>
           ) : (
             <>
-              <Upload className="h-10 w-10 text-muted-foreground" />
+              <div className="flex items-center justify-center w-12 h-12 rounded-full bg-primary/10">
+                {items.length > 0 ? (
+                  <Plus className="h-6 w-6 text-primary" />
+                ) : (
+                  <Upload className="h-6 w-6 text-primary" />
+                )}
+              </div>
               <div className="text-center">
-                <span className="text-sm font-medium">Upload Multiple QR Images</span>
+                <span className="text-sm font-medium">
+                  {items.length > 0 ? 'Add More QR Images' : 'Upload QR Images'}
+                </span>
                 <p className="text-xs text-muted-foreground mt-1">
-                  Select multiple PNG, JPG, or image files with QR codes
+                  Drag & drop or click to browse
                 </p>
               </div>
             </>
           )}
-          <Input
+          <input
             ref={fileInputRef}
             type="file"
             accept="image/*"
@@ -196,7 +249,7 @@ export function BatchScanner({ onContentsExtracted }: BatchScannerProps) {
             className="hidden"
             disabled={isScanning}
           />
-        </label>
+        </div>
 
         {/* Progress */}
         {isScanning && (

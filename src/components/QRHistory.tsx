@@ -1,9 +1,11 @@
+import { useState, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { cn } from '@/lib/utils';
-import type { QRHistoryItem } from '@/lib/qr-types';
-import { History, Trash2, Clock } from 'lucide-react';
+import type { QRHistoryItem, QRDesignStyle } from '@/lib/qr-types';
+import { History, Trash2, Clock, RefreshCw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { generateQRCanvas, applyDesignStyle } from '@/lib/qr-utils';
 
 interface QRHistoryProps {
   history: QRHistoryItem[];
@@ -11,7 +13,61 @@ interface QRHistoryProps {
   onClearHistory: () => void;
 }
 
+// Generate a small preview thumbnail for display
+async function generateThumbnail(
+  content: string,
+  design: QRDesignStyle,
+  fgColor: string,
+  bgColor: string
+): Promise<string> {
+  try {
+    let canvas = await generateQRCanvas(content, {
+      size: 150,
+      fgColor,
+      bgColor,
+    });
+    canvas = applyDesignStyle(canvas, design, fgColor, bgColor);
+    return canvas.toDataURL('image/png');
+  } catch {
+    return '';
+  }
+}
+
 export function QRHistory({ history, onLoadHistory, onClearHistory }: QRHistoryProps) {
+  const [thumbnails, setThumbnails] = useState<Record<string, string>>({});
+  const [loadingIds, setLoadingIds] = useState<Set<string>>(new Set());
+
+  // Generate thumbnails for history items
+  const generateThumbnails = useCallback(async () => {
+    const newThumbnails: Record<string, string> = {};
+    const toLoad = history.filter(item => !thumbnails[item.id] && !loadingIds.has(item.id));
+    
+    if (toLoad.length === 0) return;
+    
+    setLoadingIds(prev => new Set([...prev, ...toLoad.map(i => i.id)]));
+    
+    for (const item of toLoad) {
+      const thumb = await generateThumbnail(
+        item.content,
+        item.design,
+        item.colors.fg,
+        item.colors.bg
+      );
+      newThumbnails[item.id] = thumb;
+    }
+    
+    setThumbnails(prev => ({ ...prev, ...newThumbnails }));
+    setLoadingIds(prev => {
+      const next = new Set(prev);
+      toLoad.forEach(i => next.delete(i.id));
+      return next;
+    });
+  }, [history, thumbnails, loadingIds]);
+
+  useEffect(() => {
+    generateThumbnails();
+  }, [history]);
+
   if (history.length === 0) {
     return (
       <Card className="glass-card">
@@ -32,6 +88,9 @@ export function QRHistory({ history, onLoadHistory, onClearHistory }: QRHistoryP
         <CardTitle className="flex items-center gap-2 text-lg">
           <History className="h-5 w-5 text-primary" />
           History
+          <span className="text-xs font-normal text-muted-foreground ml-1">
+            (settings saved)
+          </span>
         </CardTitle>
         <Button
           variant="ghost"
@@ -58,12 +117,21 @@ export function QRHistory({ history, onLoadHistory, onClearHistory }: QRHistoryP
                 onClick={() => onLoadHistory(item)}
                 className="group flex flex-col items-center p-3 rounded-xl border-2 border-border bg-card hover:border-primary/50 hover:shadow-md transition-all"
               >
-                <div className="w-full aspect-square rounded-lg overflow-hidden bg-white mb-2">
-                  <img
-                    src={item.dataUrl}
-                    alt="QR Code"
-                    className="w-full h-full object-contain"
-                  />
+                <div className="w-full aspect-square rounded-lg overflow-hidden bg-white mb-2 flex items-center justify-center">
+                  {thumbnails[item.id] ? (
+                    <img
+                      src={thumbnails[item.id]}
+                      alt="QR Code"
+                      className="w-full h-full object-contain"
+                    />
+                  ) : (
+                    <motion.div
+                      animate={{ rotate: 360 }}
+                      transition={{ duration: 1, repeat: Infinity, ease: 'linear' }}
+                    >
+                      <RefreshCw className="h-6 w-6 text-muted-foreground" />
+                    </motion.div>
+                  )}
                 </div>
                 <div className="w-full text-left space-y-1">
                   <span className="text-xs font-semibold text-primary uppercase">
