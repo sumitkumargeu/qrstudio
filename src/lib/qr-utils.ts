@@ -418,7 +418,7 @@ export function addBorderToCanvas(
   return newCanvas;
 }
 
-// Fetch favicon from URL with improved reliability
+// Fetch favicon from URL with improved reliability - uses proxy for CORS
 export async function fetchFavicon(url: string): Promise<string | null> {
   try {
     // Normalize URL
@@ -430,21 +430,33 @@ export async function fetchFavicon(url: string): Promise<string | null> {
     const urlObj = new URL(normalizedUrl);
     const domain = urlObj.hostname;
 
-    // Multiple favicon sources with priority
+    // Use APIs that provide direct image access without CORS issues
     const sources = [
-      // High-res favicon APIs (most reliable)
-      `https://www.google.com/s2/favicons?domain=${domain}&sz=256`,
+      // Google's favicon service - most reliable, no CORS
+      `https://www.google.com/s2/favicons?domain=${domain}&sz=128`,
+      // DuckDuckGo icons - usually works
       `https://icons.duckduckgo.com/ip3/${domain}.ico`,
-      `https://logo.clearbit.com/${domain}`,
-      `https://api.faviconkit.com/${domain}/256`,
-      // Direct favicon paths
-      `${urlObj.origin}/apple-touch-icon.png`,
-      `${urlObj.origin}/apple-touch-icon-precomposed.png`,
-      `${urlObj.origin}/favicon-32x32.png`,
-      `${urlObj.origin}/favicon.ico`,
+      // Favicon.io service
+      `https://favicon.io/favicon.ico?domain=${domain}`,
     ];
 
     for (const src of sources) {
+      try {
+        const result = await loadFaviconViaFetch(src);
+        if (result) {
+          return result;
+        }
+      } catch {
+        continue;
+      }
+    }
+    
+    // Fallback: try image element loading for remaining sources
+    const fallbackSources = [
+      `https://www.google.com/s2/favicons?domain=${domain}&sz=64`,
+    ];
+    
+    for (const src of fallbackSources) {
       try {
         const result = await loadFaviconImage(src);
         if (result) {
@@ -454,6 +466,7 @@ export async function fetchFavicon(url: string): Promise<string | null> {
         continue;
       }
     }
+    
     return null;
   } catch (error) {
     console.error('Favicon fetch error:', error);
@@ -461,7 +474,57 @@ export async function fetchFavicon(url: string): Promise<string | null> {
   }
 }
 
-// Helper function to load and convert favicon to base64
+// Fetch favicon via fetch API and convert to base64
+async function loadFaviconViaFetch(src: string): Promise<string | null> {
+  try {
+    const response = await fetch(src, { 
+      mode: 'cors',
+      cache: 'force-cache',
+    });
+    
+    if (!response.ok) return null;
+    
+    const blob = await response.blob();
+    if (blob.size < 100) return null; // Too small, likely error
+    
+    return new Promise((resolve) => {
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        const base64 = reader.result as string;
+        // Convert to canvas for consistent sizing
+        const img = new Image();
+        img.onload = () => {
+          const canvas = document.createElement('canvas');
+          const size = 256;
+          canvas.width = size;
+          canvas.height = size;
+          const ctx = canvas.getContext('2d');
+          if (ctx) {
+            ctx.fillStyle = '#ffffff';
+            ctx.fillRect(0, 0, size, size);
+            const scale = Math.min(size / img.width, size / img.height);
+            const width = img.width * scale;
+            const height = img.height * scale;
+            const x = (size - width) / 2;
+            const y = (size - height) / 2;
+            ctx.drawImage(img, x, y, width, height);
+            resolve(canvas.toDataURL('image/png'));
+          } else {
+            resolve(base64);
+          }
+        };
+        img.onerror = () => resolve(null);
+        img.src = base64;
+      };
+      reader.onerror = () => resolve(null);
+      reader.readAsDataURL(blob);
+    });
+  } catch {
+    return null;
+  }
+}
+
+// Helper function to load and convert favicon to base64 via Image element
 async function loadFaviconImage(src: string): Promise<string | null> {
   return new Promise((resolve) => {
     const img = new Image();
@@ -470,7 +533,7 @@ async function loadFaviconImage(src: string): Promise<string | null> {
     const timeout = setTimeout(() => {
       img.src = '';
       resolve(null);
-    }, 5000);
+    }, 3000);
 
     img.onload = () => {
       clearTimeout(timeout);

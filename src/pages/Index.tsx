@@ -282,7 +282,7 @@ const Index = () => {
       await verifyQR();
 
       // Add to history
-      addToHistory(content, canvas.toDataURL('image/png'));
+      addToHistory(content);
 
       toast.success('QR code generated!');
     } catch (error) {
@@ -317,21 +317,27 @@ const Index = () => {
     }
   };
 
-  // Add to history
-  const addToHistory = (content: string, dataUrl: string) => {
+  // Add to history - stores settings only (no image data) to save space
+  const addToHistory = (content: string) => {
     const item: QRHistoryItem = {
       id: Date.now().toString(),
       type: mode,
       content,
       preview: content.length > 40 ? content.substring(0, 40) + '...' : content,
       timestamp: new Date().toLocaleString(),
-      dataUrl,
       design: designStyle,
       colors: { fg: fgColor, bg: bgColor },
       hasBorder: enableBorder,
+      borderWidth: enableBorder ? borderWidth : undefined,
+      borderColor: enableBorder ? borderColor : undefined,
+      logoId: enableLogo && selectedLogo ? selectedLogo.id : undefined,
+      logoShape: enableLogo ? logoShape : undefined,
+      logoLayout: enableLogo ? logoLayout : undefined,
+      logoSize: enableLogo ? logoSize : undefined,
+      formData: getFormData(),
     };
 
-    setHistory((prev) => [item, ...prev.slice(0, 19)]);
+    setHistory((prev) => [item, ...prev.slice(0, 29)]); // Keep 30 items
   };
 
   // Download with options - uses toBlob for large canvases to avoid 0-byte files
@@ -436,7 +442,7 @@ const Index = () => {
     }
   };
 
-  // Load from history
+  // Load from history - restores all saved settings
   const loadFromHistory = (item: QRHistoryItem) => {
     setMode(item.type);
     setDesignStyle(item.design);
@@ -445,15 +451,67 @@ const Index = () => {
     if (item.colors.fg !== '#000000' || item.colors.bg !== '#ffffff') {
       setCustomColors(true);
     }
+    
+    // Restore border settings
     if (item.hasBorder) {
       setEnableBorder(true);
+      if (item.borderWidth) setBorderWidth(item.borderWidth);
+      if (item.borderColor) setBorderColor(item.borderColor);
+    } else {
+      setEnableBorder(false);
     }
     
-    // Parse content based on type
-    if (item.type === 'url') {
-      setUrlValue(item.content.replace(/^https?:\/\//, ''));
-    } else if (item.type === 'text') {
-      setTextValue(item.content);
+    // Restore logo settings
+    if (item.logoId) {
+      setEnableLogo(true);
+      if (item.logoShape) setLogoShape(item.logoShape);
+      if (item.logoLayout) setLogoLayout(item.logoLayout);
+      if (item.logoSize) setLogoSize(item.logoSize);
+    }
+    
+    // Restore form data
+    if (item.formData) {
+      const fd = item.formData;
+      switch (item.type) {
+        case 'url':
+          setUrlValue(fd.url || item.content.replace(/^https?:\/\//, ''));
+          break;
+        case 'text':
+          setTextValue(fd.text || item.content);
+          break;
+        case 'whatsapp':
+          if (fd.phone) setPhoneValue(fd.phone);
+          if (fd.countryCode) setCountryCode(fd.countryCode);
+          if (fd.message) setMessageValue(fd.message);
+          break;
+        case 'email':
+          if (fd.email) setEmailValue(fd.email);
+          if (fd.subject) setEmailSubject(fd.subject);
+          if (fd.body) setEmailBody(fd.body);
+          break;
+        case 'wifi':
+          if (fd.ssid) setWifiSSID(fd.ssid);
+          if (fd.password) setWifiPassword(fd.password);
+          if (fd.authType) setWifiAuth(fd.authType as 'WPA' | 'WEP' | 'nopass');
+          if (fd.hidden) setWifiHidden(fd.hidden === 'true');
+          break;
+        case 'vcard':
+          if (fd.firstName) setVcardFirstName(fd.firstName);
+          if (fd.lastName) setVcardLastName(fd.lastName);
+          if (fd.phone) setVcardPhone(fd.phone);
+          if (fd.email) setVcardEmail(fd.email);
+          if (fd.company) setVcardCompany(fd.company);
+          if (fd.title) setVcardTitle(fd.title);
+          if (fd.website) setVcardWebsite(fd.website);
+          break;
+      }
+    } else {
+      // Fallback: parse content directly
+      if (item.type === 'url') {
+        setUrlValue(item.content.replace(/^https?:\/\//, ''));
+      } else if (item.type === 'text') {
+        setTextValue(item.content);
+      }
     }
     
     setActiveTab('generate');
