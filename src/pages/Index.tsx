@@ -112,45 +112,61 @@ const Index = () => {
   const [isGradient, setIsGradient] = useState(false);
   const [gradientColors, setGradientColors] = useState<string[]>([]);
 
-  // Logo
+  // Logo - preset to square shape
   const [enableLogo, setEnableLogo] = useState(false);
   const [selectedLogo, setSelectedLogo] = useState<LogoItem | null>(null);
-  const [logoShape, setLogoShape] = useState<LogoShape>('circle');
+  const [logoShape, setLogoShape] = useState<LogoShape>('square');
   const [logoLayout, setLogoLayout] = useState<LogoLayout>('center');
   const [logoSize, setLogoSize] = useState(15);
 
-  // Border
+  // Border - preset to 15px white
   const [enableBorder, setEnableBorder] = useState(false);
-  const [borderWidth, setBorderWidth] = useState(20);
-  const [borderColor, setBorderColor] = useState('#000000');
+  const [borderWidth, setBorderWidth] = useState(15);
+  const [borderColor, setBorderColor] = useState('#ffffff');
 
   // Verification
   const [verificationStatus, setVerificationStatus] = useState<VerificationStatus>('idle');
   const [verificationMessage, setVerificationMessage] = useState('');
 
-  // History
+  // History with limit slider
   const [history, setHistory] = useState<QRHistoryItem[]>([]);
+  const [maxHistory, setMaxHistory] = useState(10);
   const [previewContent, setPreviewContent] = useState('');
   const [qrDataUrl, setQrDataUrl] = useState<string | null>(null);
+  
+  // Batch scanner contents
+  const [batchScanContents, setBatchScanContents] = useState<string[]>([]);
 
   // Canvas Ref
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const generatedCanvasRef = useRef<HTMLCanvasElement | null>(null);
 
-  // Load history from localStorage
+  // Load history and settings from localStorage
   useEffect(() => {
     try {
       const saved = localStorage.getItem('qrHistory');
       if (saved) setHistory(JSON.parse(saved));
+      const savedMax = localStorage.getItem('qrMaxHistory');
+      if (savedMax) setMaxHistory(parseInt(savedMax, 10));
     } catch {}
   }, []);
 
-  // Save history to localStorage
+  // Save history to localStorage (respecting maxHistory limit)
   useEffect(() => {
     try {
-      localStorage.setItem('qrHistory', JSON.stringify(history.slice(0, 20)));
+      if (maxHistory === 0) {
+        localStorage.removeItem('qrHistory');
+        setHistory([]);
+      } else {
+        localStorage.setItem('qrHistory', JSON.stringify(history.slice(0, maxHistory)));
+      }
     } catch {}
-  }, [history]);
+  }, [history, maxHistory]);
+  
+  // Save maxHistory setting
+  useEffect(() => {
+    localStorage.setItem('qrMaxHistory', maxHistory.toString());
+  }, [maxHistory]);
 
   // Handle color preset selection
   const handlePresetSelect = (preset: ColorPreset) => {
@@ -318,7 +334,17 @@ const Index = () => {
   };
 
   // Add to history - stores settings only (no image data) to save space
+  // Only called when Generate button is clicked - prevents duplicates
   const addToHistory = (content: string) => {
+    if (maxHistory === 0) return; // History disabled
+    
+    // Check for duplicates (same content and design)
+    const isDuplicate = history.some(
+      h => h.content === content && h.design === designStyle && 
+           h.colors.fg === fgColor && h.colors.bg === bgColor
+    );
+    if (isDuplicate) return;
+    
     const item: QRHistoryItem = {
       id: Date.now().toString(),
       type: mode,
@@ -337,7 +363,7 @@ const Index = () => {
       formData: getFormData(),
     };
 
-    setHistory((prev) => [item, ...prev.slice(0, 29)]); // Keep 30 items
+    setHistory((prev) => [item, ...prev.slice(0, maxHistory - 1)]);
   };
 
   // Download with options - uses toBlob for large canvases to avoid 0-byte files
@@ -1207,7 +1233,7 @@ const Index = () => {
           {/* Batch Tab */}
           <TabsContent value="batch">
             <div className="max-w-5xl mx-auto">
-              <BatchGenerator />
+              <BatchGenerator initialContents={batchScanContents} />
             </div>
           </TabsContent>
 
@@ -1215,12 +1241,12 @@ const Index = () => {
           <TabsContent value="scan">
             <div className="max-w-3xl mx-auto grid md:grid-cols-2 gap-6">
               <QRScanner onContentExtracted={handleExtractedContent} />
-              <BatchScanner onContentsExtracted={(contents) => {
-                // Switch to batch tab and load contents
-                setActiveTab('batch');
-                // Contents will be joined with newlines for batch input
-                toast.success(`${contents.length} QR codes loaded to batch generator!`);
-              }} />
+              <BatchScanner 
+                onContentsExtracted={(contents) => {
+                  setBatchScanContents(contents);
+                }}
+                onSwitchToBatch={() => setActiveTab('batch')}
+              />
             </div>
           </TabsContent>
 
@@ -1230,6 +1256,8 @@ const Index = () => {
               history={history}
               onLoadHistory={loadFromHistory}
               onClearHistory={clearHistory}
+              maxHistory={maxHistory}
+              onMaxHistoryChange={setMaxHistory}
             />
           </TabsContent>
         </Tabs>

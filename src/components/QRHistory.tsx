@@ -1,72 +1,35 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { cn } from '@/lib/utils';
-import type { QRHistoryItem, QRDesignStyle } from '@/lib/qr-types';
-import { History, Trash2, Clock, RefreshCw } from 'lucide-react';
+import type { QRHistoryItem } from '@/lib/qr-types';
+import { History, Trash2, Clock, RefreshCw, ChevronDown, ChevronUp, Settings2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { generateQRCanvas, applyDesignStyle } from '@/lib/qr-utils';
+import { Slider } from '@/components/ui/slider';
+import { Label } from '@/components/ui/label';
+import { Badge } from '@/components/ui/badge';
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from '@/components/ui/collapsible';
 
 interface QRHistoryProps {
   history: QRHistoryItem[];
   onLoadHistory: (item: QRHistoryItem) => void;
   onClearHistory: () => void;
+  maxHistory: number;
+  onMaxHistoryChange: (value: number) => void;
 }
 
-// Generate a small preview thumbnail for display
-async function generateThumbnail(
-  content: string,
-  design: QRDesignStyle,
-  fgColor: string,
-  bgColor: string
-): Promise<string> {
-  try {
-    let canvas = await generateQRCanvas(content, {
-      size: 150,
-      fgColor,
-      bgColor,
-    });
-    canvas = applyDesignStyle(canvas, design, fgColor, bgColor);
-    return canvas.toDataURL('image/png');
-  } catch {
-    return '';
-  }
-}
-
-export function QRHistory({ history, onLoadHistory, onClearHistory }: QRHistoryProps) {
-  const [thumbnails, setThumbnails] = useState<Record<string, string>>({});
-  const [loadingIds, setLoadingIds] = useState<Set<string>>(new Set());
-
-  // Generate thumbnails for history items
-  const generateThumbnails = useCallback(async () => {
-    const newThumbnails: Record<string, string> = {};
-    const toLoad = history.filter(item => !thumbnails[item.id] && !loadingIds.has(item.id));
-    
-    if (toLoad.length === 0) return;
-    
-    setLoadingIds(prev => new Set([...prev, ...toLoad.map(i => i.id)]));
-    
-    for (const item of toLoad) {
-      const thumb = await generateThumbnail(
-        item.content,
-        item.design,
-        item.colors.fg,
-        item.colors.bg
-      );
-      newThumbnails[item.id] = thumb;
-    }
-    
-    setThumbnails(prev => ({ ...prev, ...newThumbnails }));
-    setLoadingIds(prev => {
-      const next = new Set(prev);
-      toLoad.forEach(i => next.delete(i.id));
-      return next;
-    });
-  }, [history, thumbnails, loadingIds]);
-
-  useEffect(() => {
-    generateThumbnails();
-  }, [history]);
+export function QRHistory({ 
+  history, 
+  onLoadHistory, 
+  onClearHistory,
+  maxHistory,
+  onMaxHistoryChange,
+}: QRHistoryProps) {
+  const [settingsOpen, setSettingsOpen] = useState(false);
 
   if (history.length === 0) {
     return (
@@ -84,68 +47,140 @@ export function QRHistory({ history, onLoadHistory, onClearHistory }: QRHistoryP
 
   return (
     <Card className="glass-card">
-      <CardHeader className="flex flex-row items-center justify-between pb-4">
-        <CardTitle className="flex items-center gap-2 text-lg">
-          <History className="h-5 w-5 text-primary" />
-          History
-          <span className="text-xs font-normal text-muted-foreground ml-1">
-            (settings saved)
-          </span>
-        </CardTitle>
-        <Button
-          variant="ghost"
-          size="sm"
-          onClick={onClearHistory}
-          className="text-muted-foreground hover:text-destructive"
-        >
-          <Trash2 className="h-4 w-4 mr-1" />
-          Clear
-        </Button>
+      <CardHeader className="pb-4">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <CardTitle className="flex items-center gap-2 text-lg">
+            <History className="h-5 w-5 text-primary" />
+            History
+            <Badge variant="secondary" className="ml-1">
+              {history.length} / {maxHistory}
+            </Badge>
+          </CardTitle>
+          <div className="flex items-center gap-2">
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setSettingsOpen(!settingsOpen)}
+              className="text-muted-foreground"
+            >
+              <Settings2 className="h-4 w-4 mr-1" />
+              Settings
+              {settingsOpen ? <ChevronUp className="h-3 w-3 ml-1" /> : <ChevronDown className="h-3 w-3 ml-1" />}
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={onClearHistory}
+              className="text-muted-foreground hover:text-destructive"
+            >
+              <Trash2 className="h-4 w-4 mr-1" />
+              Clear All
+            </Button>
+          </div>
+        </div>
+        
+        {/* Settings Panel */}
+        <AnimatePresence>
+          {settingsOpen && (
+            <motion.div
+              initial={{ height: 0, opacity: 0 }}
+              animate={{ height: 'auto', opacity: 1 }}
+              exit={{ height: 0, opacity: 0 }}
+              className="overflow-hidden"
+            >
+              <div className="pt-4 space-y-3 border-t border-border mt-3">
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <Label className="text-sm">Max History Items</Label>
+                    <span className="text-sm font-medium text-primary">{maxHistory}</span>
+                  </div>
+                  <Slider
+                    value={[maxHistory]}
+                    onValueChange={(v) => onMaxHistoryChange(v[0])}
+                    min={0}
+                    max={50}
+                    step={5}
+                    className="w-full"
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Set to 0 to disable history. Current: {history.length} items stored.
+                  </p>
+                </div>
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
       </CardHeader>
+      
       <CardContent>
-        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3 max-h-80 overflow-y-auto scrollbar-thin">
+        <div className="space-y-2 max-h-[500px] overflow-y-auto scrollbar-thin">
           <AnimatePresence>
             {history.map((item, index) => (
-              <motion.button
+              <motion.div
                 key={item.id}
-                initial={{ opacity: 0, scale: 0.8 }}
-                animate={{ opacity: 1, scale: 1 }}
-                exit={{ opacity: 0, scale: 0.8 }}
-                transition={{ delay: index * 0.05 }}
-                whileHover={{ scale: 1.02 }}
-                whileTap={{ scale: 0.98 }}
-                onClick={() => onLoadHistory(item)}
-                className="group flex flex-col items-center p-3 rounded-xl border-2 border-border bg-card hover:border-primary/50 hover:shadow-md transition-all"
+                initial={{ opacity: 0, x: -20 }}
+                animate={{ opacity: 1, x: 0 }}
+                exit={{ opacity: 0, x: 20 }}
+                transition={{ delay: index * 0.03 }}
+                className="group"
               >
-                <div className="w-full aspect-square rounded-lg overflow-hidden bg-white mb-2 flex items-center justify-center">
-                  {thumbnails[item.id] ? (
-                    <img
-                      src={thumbnails[item.id]}
-                      alt="QR Code"
-                      className="w-full h-full object-contain"
-                    />
-                  ) : (
-                    <motion.div
-                      animate={{ rotate: 360 }}
-                      transition={{ duration: 1, repeat: Infinity, ease: 'linear' }}
-                    >
-                      <RefreshCw className="h-6 w-6 text-muted-foreground" />
-                    </motion.div>
-                  )}
-                </div>
-                <div className="w-full text-left space-y-1">
-                  <span className="text-xs font-semibold text-primary uppercase">
-                    {item.type}
-                  </span>
-                  <p className="text-xs text-muted-foreground truncate">
-                    {item.preview}
-                  </p>
-                  <div className="flex items-center gap-1 text-[10px] text-muted-foreground">
-                    <Clock className="h-3 w-3" />
-                    <span>{item.timestamp}</span>
+                <button
+                  onClick={() => onLoadHistory(item)}
+                  className="w-full p-4 rounded-xl border-2 border-border bg-card hover:border-primary/50 hover:bg-secondary/30 transition-all text-left"
+                >
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <Badge variant="outline" className="text-xs font-semibold uppercase">
+                          {item.type}
+                        </Badge>
+                        <Badge variant="secondary" className="text-xs">
+                          {item.design}
+                        </Badge>
+                        {item.hasBorder && (
+                          <Badge variant="secondary" className="text-xs">
+                            Border
+                          </Badge>
+                        )}
+                        {item.logoId && (
+                          <Badge variant="secondary" className="text-xs">
+                            Logo
+                          </Badge>
+                        )}
+                      </div>
+                      <p className="text-sm text-foreground font-medium mt-2 truncate">
+                        {item.preview}
+                      </p>
+                      <div className="flex items-center gap-3 mt-2 text-xs text-muted-foreground">
+                        <span className="flex items-center gap-1">
+                          <Clock className="h-3 w-3" />
+                          {item.timestamp}
+                        </span>
+                        <span className="flex items-center gap-1">
+                          <div 
+                            className="w-3 h-3 rounded border border-border" 
+                            style={{ backgroundColor: item.colors.fg }}
+                          />
+                          <div 
+                            className="w-3 h-3 rounded border border-border" 
+                            style={{ backgroundColor: item.colors.bg }}
+                          />
+                        </span>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="opacity-0 group-hover:opacity-100 transition-opacity text-primary"
+                      >
+                        <RefreshCw className="h-4 w-4 mr-1" />
+                        Recreate
+                      </Button>
+                    </div>
                   </div>
-                </div>
-              </motion.button>
+                </button>
+              </motion.div>
             ))}
           </AnimatePresence>
         </div>

@@ -56,9 +56,13 @@ interface BatchItem {
   error?: string;
 }
 
-export function BatchGenerator() {
+interface BatchGeneratorProps {
+  initialContents?: string[];
+}
+
+export function BatchGenerator({ initialContents = [] }: BatchGeneratorProps) {
   // Input state
-  const [inputText, setInputText] = useState('');
+  const [inputText, setInputText] = useState(initialContents.join('\n'));
   const [items, setItems] = useState<BatchItem[]>([]);
   const [isGenerating, setIsGenerating] = useState(false);
   const [progress, setProgress] = useState(0);
@@ -73,17 +77,24 @@ export function BatchGenerator() {
   const [bgColor, setBgColor] = useState('#ffffff');
   const [selectedPreset, setSelectedPreset] = useState<string | null>(null);
 
-  // Logo state
+  // Logo state - preset to square
   const [enableLogo, setEnableLogo] = useState(false);
   const [selectedLogo, setSelectedLogo] = useState<LogoItem | null>(null);
-  const [logoShape, setLogoShape] = useState<LogoShape>('circle');
+  const [logoShape, setLogoShape] = useState<LogoShape>('square');
   const [logoLayout, setLogoLayout] = useState<LogoLayout>('center');
   const [logoSize, setLogoSize] = useState(15);
 
-  // Border state
+  // Border state - preset to 15px white
   const [enableBorder, setEnableBorder] = useState(false);
-  const [borderWidth, setBorderWidth] = useState(20);
-  const [borderColor, setBorderColor] = useState('#000000');
+  const [borderWidth, setBorderWidth] = useState(15);
+  const [borderColor, setBorderColor] = useState('#ffffff');
+  
+  // Update input when initialContents changes
+  useState(() => {
+    if (initialContents.length > 0) {
+      setInputText(initialContents.join('\n'));
+    }
+  });
 
   const handlePresetSelect = (preset: ColorPreset) => {
     setSelectedPreset(preset.id);
