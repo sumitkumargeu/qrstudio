@@ -1,10 +1,11 @@
-import { useEffect, useRef, useState, useMemo } from 'react';
+import { useEffect, useRef, useState, useMemo, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { cn } from '@/lib/utils';
 import type { VerificationStatus, QRDesignStyle, LogoItem, LogoShape, LogoLayout, QRMode } from '@/lib/qr-types';
 import { generateQRCanvas, generateQRContent, applyDesignStyle, addLogoToCanvas, addBorderToCanvas } from '@/lib/qr-utils';
-import { CheckCircle, AlertTriangle, XCircle, Loader2, Eye, EyeOff } from 'lucide-react';
+import { CheckCircle, AlertTriangle, XCircle, Loader2, Eye, EyeOff, Maximize2 } from 'lucide-react';
 import { Button } from './ui/button';
+import { QRPreviewModal } from './QRPreviewModal';
 
 interface LivePreviewProps {
   // Form data for generating content
@@ -53,6 +54,7 @@ export function LivePreview({
   const [isGenerating, setIsGenerating] = useState(false);
   const [hasQR, setHasQR] = useState(false);
   const [livePreviewEnabled, setLivePreviewEnabled] = useState(true);
+  const [showFullscreen, setShowFullscreen] = useState(false);
   const debounceRef = useRef<NodeJS.Timeout>();
 
   // Generate content from form data
@@ -164,117 +166,160 @@ export function LivePreview({
   ]);
 
   return (
-    <div className="flex flex-col items-center space-y-4">
-      {/* Live Preview Toggle */}
-      <div className="flex items-center gap-2">
-        <Button
-          variant="ghost"
-          size="sm"
-          onClick={() => setLivePreviewEnabled(!livePreviewEnabled)}
-          className={cn(
-            'gap-2 text-xs',
-            livePreviewEnabled ? 'text-success' : 'text-muted-foreground'
-          )}
-        >
-          {livePreviewEnabled ? (
-            <>
-              <Eye className="h-3 w-3" />
-              Live Preview ON
-            </>
-          ) : (
-            <>
-              <EyeOff className="h-3 w-3" />
-              Live Preview OFF
-            </>
-          )}
-        </Button>
-      </div>
-
-      {/* Verification Badge */}
-      <AnimatePresence>
-        {verificationStatus !== 'idle' && (
-          <motion.div
-            initial={{ opacity: 0, y: -10 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -10 }}
+    <>
+      <div className="flex flex-col items-center space-y-4">
+        {/* Live Preview Toggle */}
+        <div className="flex items-center gap-2">
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => setLivePreviewEnabled(!livePreviewEnabled)}
             className={cn(
-              'flex items-center gap-2 px-4 py-2 rounded-full text-sm font-medium',
-              verificationStatus === 'verifying' && 'bg-primary/10 text-primary',
-              verificationStatus === 'verified' && 'bg-success/10 text-success',
-              verificationStatus === 'warning' && 'bg-warning/10 text-warning',
-              verificationStatus === 'error' && 'bg-destructive/10 text-destructive'
+              'gap-2 text-xs',
+              livePreviewEnabled ? 'text-success' : 'text-muted-foreground'
             )}
           >
-            {verificationStatus === 'verifying' && (
-              <Loader2 className="h-4 w-4 animate-spin" />
+            {livePreviewEnabled ? (
+              <>
+                <Eye className="h-3 w-3" />
+                Live Preview ON
+              </>
+            ) : (
+              <>
+                <EyeOff className="h-3 w-3" />
+                Live Preview OFF
+              </>
             )}
-            {verificationStatus === 'verified' && (
-              <CheckCircle className="h-4 w-4" />
-            )}
-            {verificationStatus === 'warning' && (
-              <AlertTriangle className="h-4 w-4" />
-            )}
-            {verificationStatus === 'error' && (
-              <XCircle className="h-4 w-4" />
-            )}
-            <span>{verificationMessage}</span>
-          </motion.div>
-        )}
-      </AnimatePresence>
+          </Button>
+        </div>
 
-      {/* QR Canvas Container */}
-      <motion.div
-        initial={{ scale: 0.9, opacity: 0 }}
-        animate={{ scale: 1, opacity: 1 }}
-        className={cn(
-          'relative rounded-2xl bg-white p-5 shadow-xl transition-all duration-300',
-          enableBorder && 'ring-4 ring-foreground ring-offset-2 ring-offset-background',
-          hasQR && 'shadow-glow'
-        )}
-        style={{
-          boxShadow: hasQR
-            ? '0 20px 60px -15px rgba(0, 0, 0, 0.15)'
-            : undefined,
-        }}
-      >
-        {/* Generating Overlay */}
+        {/* Verification Badge */}
         <AnimatePresence>
-          {isGenerating && (
+          {verificationStatus !== 'idle' && (
             <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              className="absolute inset-0 z-10 flex items-center justify-center bg-white/80 rounded-2xl"
+              initial={{ opacity: 0, y: -10 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -10 }}
+              className={cn(
+                'flex items-center gap-2 px-4 py-2 rounded-full text-sm font-medium',
+                verificationStatus === 'verifying' && 'bg-primary/10 text-primary',
+                verificationStatus === 'verified' && 'bg-success/10 text-success',
+                verificationStatus === 'warning' && 'bg-warning/10 text-warning',
+                verificationStatus === 'error' && 'bg-destructive/10 text-destructive'
+              )}
             >
-              <Loader2 className="h-8 w-8 animate-spin text-primary" />
+              {verificationStatus === 'verifying' && (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              )}
+              {verificationStatus === 'verified' && (
+                <CheckCircle className="h-4 w-4" />
+              )}
+              {verificationStatus === 'warning' && (
+                <AlertTriangle className="h-4 w-4" />
+              )}
+              {verificationStatus === 'error' && (
+                <XCircle className="h-4 w-4" />
+              )}
+              <span>{verificationMessage}</span>
             </motion.div>
           )}
         </AnimatePresence>
 
-        {!hasQR ? (
-          <div className="w-56 h-56 md:w-64 md:h-64 flex flex-col items-center justify-center text-muted-foreground space-y-3">
-            <motion.div
-              animate={{ scale: [1, 1.1, 1] }}
-              transition={{ duration: 2, repeat: Infinity }}
-              className="text-6xl"
-            >
-              📱
-            </motion.div>
-            <p className="text-sm text-center">
-              {livePreviewEnabled 
-                ? 'Start typing to see live preview'
-                : 'Click Generate to create QR'
-              }
-            </p>
-          </div>
-        ) : (
-          <canvas
-            ref={canvasRef}
-            className="w-56 h-56 md:w-64 md:h-64 rounded-lg"
-            style={{ imageRendering: 'crisp-edges' }}
-          />
+        {/* QR Canvas Container */}
+        <motion.div
+          initial={{ scale: 0.9, opacity: 0 }}
+          animate={{ scale: 1, opacity: 1 }}
+          className={cn(
+            'relative rounded-2xl bg-white p-5 shadow-xl transition-all duration-300 group cursor-pointer',
+            enableBorder && 'ring-4 ring-foreground ring-offset-2 ring-offset-background',
+            hasQR && 'shadow-glow hover:shadow-glow-accent'
+          )}
+          style={{
+            boxShadow: hasQR
+              ? '0 20px 60px -15px rgba(0, 0, 0, 0.15)'
+              : undefined,
+          }}
+          onClick={() => hasQR && setShowFullscreen(true)}
+        >
+          {/* Fullscreen button on hover */}
+          {hasQR && (
+            <div className="absolute inset-0 flex items-center justify-center bg-black/0 group-hover:bg-black/30 transition-all rounded-2xl z-10 pointer-events-none">
+              <motion.div
+                initial={{ opacity: 0, scale: 0.8 }}
+                whileHover={{ opacity: 1, scale: 1 }}
+                className="opacity-0 group-hover:opacity-100 transition-opacity"
+              >
+                <div className="bg-white rounded-full p-3 shadow-lg">
+                  <Maximize2 className="h-6 w-6 text-primary" />
+                </div>
+              </motion.div>
+            </div>
+          )}
+
+          {/* Generating Overlay */}
+          <AnimatePresence>
+            {isGenerating && (
+              <motion.div
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                className="absolute inset-0 z-20 flex items-center justify-center bg-white/80 rounded-2xl"
+              >
+                <Loader2 className="h-8 w-8 animate-spin text-primary" />
+              </motion.div>
+            )}
+          </AnimatePresence>
+
+          {!hasQR ? (
+            <div className="w-56 h-56 md:w-64 md:h-64 flex flex-col items-center justify-center text-muted-foreground space-y-3">
+              <motion.div
+                animate={{ scale: [1, 1.1, 1] }}
+                transition={{ duration: 2, repeat: Infinity }}
+                className="text-6xl"
+              >
+                📱
+              </motion.div>
+              <p className="text-sm text-center">
+                {livePreviewEnabled 
+                  ? 'Start typing to see live preview'
+                  : 'Click Generate to create QR'
+                }
+              </p>
+            </div>
+          ) : (
+            <canvas
+              ref={canvasRef}
+              className="w-56 h-56 md:w-64 md:h-64 rounded-lg"
+              style={{ imageRendering: 'crisp-edges' }}
+            />
+          )}
+        </motion.div>
+
+        {/* Hover hint */}
+        {hasQR && (
+          <p className="text-xs text-muted-foreground">
+            Click QR for fullscreen preview
+          </p>
         )}
-      </motion.div>
-    </div>
+      </div>
+
+      {/* Fullscreen Modal */}
+      <QRPreviewModal
+        isOpen={showFullscreen}
+        onClose={() => setShowFullscreen(false)}
+        content={content}
+        designStyle={designStyle}
+        fgColor={fgColor}
+        bgColor={bgColor}
+        enableLogo={enableLogo}
+        logo={logo}
+        logoShape={logoShape}
+        logoLayout={logoLayout}
+        logoSize={logoSize}
+        enableBorder={enableBorder}
+        borderWidth={borderWidth}
+        borderColor={borderColor}
+      />
+    </>
   );
 }

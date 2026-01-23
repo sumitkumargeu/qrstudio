@@ -30,14 +30,16 @@ interface ScannedItem {
 
 interface BatchScannerProps {
   onContentsExtracted: (contents: string[]) => void;
+  onSwitchToBatch?: () => void;
 }
 
-export function BatchScanner({ onContentsExtracted }: BatchScannerProps) {
+export function BatchScanner({ onContentsExtracted, onSwitchToBatch }: BatchScannerProps) {
   const [items, setItems] = useState<ScannedItem[]>([]);
   const [isScanning, setIsScanning] = useState(false);
   const [progress, setProgress] = useState(0);
   const [isDragOver, setIsDragOver] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const scannerRef = useRef<Html5Qrcode | null>(null);
 
   const addFiles = useCallback(async (files: FileList | File[]) => {
     const fileArray = Array.from(files).filter(f => f.type.startsWith('image/'));
@@ -97,9 +99,14 @@ export function BatchScanner({ onContentsExtracted }: BatchScannerProps) {
     if (filesToScan.length === 0) return;
     
     setIsScanning(true);
-    const startIndex = items.length;
+    setProgress(0);
     
-    const html5QrCode = new Html5Qrcode('batch-qr-reader-element');
+    // Create scanner if needed
+    if (!scannerRef.current) {
+      scannerRef.current = new Html5Qrcode('batch-qr-reader-element');
+    }
+
+    const results: { id: string; content: string; status: 'done' | 'error'; error?: string }[] = [];
 
     for (let i = 0; i < filesToScan.length; i++) {
       const item = filesToScan[i];
@@ -109,12 +116,14 @@ export function BatchScanner({ onContentsExtracted }: BatchScannerProps) {
       ));
 
       try {
-        const result = await html5QrCode.scanFile(item.file, true);
+        const result = await scannerRef.current.scanFile(item.file, true);
+        results.push({ id: item.id, content: result, status: 'done' });
         setItems(prev => prev.map(p => 
           p.id === item.id ? { ...p, status: 'done', content: result } : p
         ));
       } catch (err) {
         console.error('Scan error:', err);
+        results.push({ id: item.id, content: '', status: 'error', error: 'Could not read QR code' });
         setItems(prev => prev.map(p => 
           p.id === item.id ? { ...p, status: 'error', error: 'Could not read QR code' } : p
         ));
@@ -123,16 +132,15 @@ export function BatchScanner({ onContentsExtracted }: BatchScannerProps) {
       setProgress(((i + 1) / filesToScan.length) * 100);
     }
 
-    await html5QrCode.clear();
+    try {
+      await scannerRef.current.clear();
+    } catch {}
+    
     setIsScanning(false);
     setProgress(0);
 
-    const successCount = filesToScan.filter((_, i) => {
-      const idx = startIndex + i;
-      return items[idx]?.status === 'done';
-    }).length;
-    
-    toast.success(`Scanned ${filesToScan.length} QR code${filesToScan.length > 1 ? 's' : ''}`);
+    const successCount = results.filter(r => r.status === 'done').length;
+    toast.success(`Scanned ${successCount} of ${filesToScan.length} QR code${filesToScan.length > 1 ? 's' : ''}`);
   };
 
   const handleRecreateAll = () => {
@@ -146,7 +154,10 @@ export function BatchScanner({ onContentsExtracted }: BatchScannerProps) {
     }
 
     onContentsExtracted(contents);
-    toast.success(`${contents.length} QR codes loaded to batch generator!`);
+    if (onSwitchToBatch) {
+      onSwitchToBatch();
+    }
+    toast.success(`${contents.length} QR codes ready for batch recreation!`);
   };
 
   const handleCopyAll = async () => {

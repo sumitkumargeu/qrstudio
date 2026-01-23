@@ -418,7 +418,7 @@ export function addBorderToCanvas(
   return newCanvas;
 }
 
-// Fetch favicon from URL with improved reliability - uses proxy for CORS
+// AGGRESSIVE favicon fetch - tries multiple methods and services
 export async function fetchFavicon(url: string): Promise<string | null> {
   try {
     // Normalize URL
@@ -430,43 +430,33 @@ export async function fetchFavicon(url: string): Promise<string | null> {
     const urlObj = new URL(normalizedUrl);
     const domain = urlObj.hostname;
 
-    // Use APIs that provide direct image access without CORS issues
-    const sources = [
-      // Google's favicon service - most reliable, no CORS
-      `https://www.google.com/s2/favicons?domain=${domain}&sz=128`,
-      // DuckDuckGo icons - usually works
-      `https://icons.duckduckgo.com/ip3/${domain}.ico`,
-      // Favicon.io service
-      `https://favicon.io/favicon.ico?domain=${domain}`,
+    console.log('Fetching favicon for domain:', domain);
+
+    // Try multiple methods in parallel for speed
+    const methods = [
+      // Method 1: Google's favicon service (most reliable)
+      tryGoogleFavicon(domain),
+      // Method 2: DuckDuckGo icons
+      tryDuckDuckGoFavicon(domain),
+      // Method 3: Direct favicon load via Image element
+      tryDirectFavicon(domain),
+      // Method 4: Clearbit logo API
+      tryClearbitLogo(domain),
+      // Method 5: Icon.horse service
+      tryIconHorse(domain),
     ];
 
-    for (const src of sources) {
-      try {
-        const result = await loadFaviconViaFetch(src);
-        if (result) {
-          return result;
-        }
-      } catch {
-        continue;
+    // Race all methods - first successful one wins
+    const results = await Promise.allSettled(methods);
+    
+    for (const result of results) {
+      if (result.status === 'fulfilled' && result.value) {
+        console.log('Favicon fetched successfully');
+        return result.value;
       }
     }
-    
-    // Fallback: try image element loading for remaining sources
-    const fallbackSources = [
-      `https://www.google.com/s2/favicons?domain=${domain}&sz=64`,
-    ];
-    
-    for (const src of fallbackSources) {
-      try {
-        const result = await loadFaviconImage(src);
-        if (result) {
-          return result;
-        }
-      } catch {
-        continue;
-      }
-    }
-    
+
+    console.log('All favicon methods failed');
     return null;
   } catch (error) {
     console.error('Favicon fetch error:', error);
@@ -474,58 +464,54 @@ export async function fetchFavicon(url: string): Promise<string | null> {
   }
 }
 
-// Fetch favicon via fetch API and convert to base64
-async function loadFaviconViaFetch(src: string): Promise<string | null> {
-  try {
-    const response = await fetch(src, { 
-      mode: 'cors',
-      cache: 'force-cache',
-    });
-    
-    if (!response.ok) return null;
-    
-    const blob = await response.blob();
-    if (blob.size < 100) return null; // Too small, likely error
-    
-    return new Promise((resolve) => {
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        const base64 = reader.result as string;
-        // Convert to canvas for consistent sizing
-        const img = new Image();
-        img.onload = () => {
-          const canvas = document.createElement('canvas');
-          const size = 256;
-          canvas.width = size;
-          canvas.height = size;
-          const ctx = canvas.getContext('2d');
-          if (ctx) {
-            ctx.fillStyle = '#ffffff';
-            ctx.fillRect(0, 0, size, size);
-            const scale = Math.min(size / img.width, size / img.height);
-            const width = img.width * scale;
-            const height = img.height * scale;
-            const x = (size - width) / 2;
-            const y = (size - height) / 2;
-            ctx.drawImage(img, x, y, width, height);
-            resolve(canvas.toDataURL('image/png'));
-          } else {
-            resolve(base64);
-          }
-        };
-        img.onerror = () => resolve(null);
-        img.src = base64;
-      };
-      reader.onerror = () => resolve(null);
-      reader.readAsDataURL(blob);
-    });
-  } catch {
-    return null;
+// Google Favicon Service
+async function tryGoogleFavicon(domain: string): Promise<string | null> {
+  const sizes = [128, 64, 32];
+  
+  for (const size of sizes) {
+    const url = `https://www.google.com/s2/favicons?domain=${domain}&sz=${size}`;
+    const result = await loadFaviconViaImage(url);
+    if (result) return result;
   }
+  return null;
 }
 
-// Helper function to load and convert favicon to base64 via Image element
-async function loadFaviconImage(src: string): Promise<string | null> {
+// DuckDuckGo Favicon Service  
+async function tryDuckDuckGoFavicon(domain: string): Promise<string | null> {
+  const url = `https://icons.duckduckgo.com/ip3/${domain}.ico`;
+  return loadFaviconViaImage(url);
+}
+
+// Direct favicon from domain
+async function tryDirectFavicon(domain: string): Promise<string | null> {
+  const paths = [
+    `https://${domain}/favicon.ico`,
+    `https://${domain}/favicon.png`,
+    `https://${domain}/apple-touch-icon.png`,
+    `https://${domain}/apple-touch-icon-precomposed.png`,
+  ];
+  
+  for (const path of paths) {
+    const result = await loadFaviconViaImage(path);
+    if (result) return result;
+  }
+  return null;
+}
+
+// Clearbit Logo API
+async function tryClearbitLogo(domain: string): Promise<string | null> {
+  const url = `https://logo.clearbit.com/${domain}`;
+  return loadFaviconViaImage(url);
+}
+
+// Icon.horse service
+async function tryIconHorse(domain: string): Promise<string | null> {
+  const url = `https://icon.horse/icon/${domain}`;
+  return loadFaviconViaImage(url);
+}
+
+// Load favicon via Image element - bypasses CORS for display
+async function loadFaviconViaImage(src: string): Promise<string | null> {
   return new Promise((resolve) => {
     const img = new Image();
     img.crossOrigin = 'anonymous';
@@ -533,13 +519,13 @@ async function loadFaviconImage(src: string): Promise<string | null> {
     const timeout = setTimeout(() => {
       img.src = '';
       resolve(null);
-    }, 3000);
+    }, 5000);
 
     img.onload = () => {
       clearTimeout(timeout);
       
-      // Skip very small images (likely placeholder)
-      if (img.width < 16 || img.height < 16) {
+      // Skip very small or broken images
+      if (img.width < 8 || img.height < 8) {
         resolve(null);
         return;
       }
